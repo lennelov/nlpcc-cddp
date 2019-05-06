@@ -1,15 +1,6 @@
 #/usr/bin/env python
 #-*- coding: utf-8 -*-
 
-"""
-Copyright (c) 2017 bytedance.com, Inc. All Rights Reserved
-
-Author  : qiaochao@bytedance.com
-
-Date    : 2017-12-20 10:29
-
-Brief   :
-"""
 
 import os
 import sys
