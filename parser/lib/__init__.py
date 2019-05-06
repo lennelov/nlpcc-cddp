@@ -5,6 +5,7 @@ import os
 import logging
 import logging.config
 
+
 initialized = False
 def initialize_logging(out, level='DEBUG'):
     logging.config.dictConfig({

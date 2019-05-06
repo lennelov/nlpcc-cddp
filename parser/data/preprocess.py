@@ -16,12 +16,12 @@ with open(emb_dir, encoding='utf-8') as fin:
     for idx, line in enumerate(fin):
         if idx > 0:
             line = line.strip().split(' ')
-            fout.write((str(idx-1)+'\t'+line[0]+'\n').encode('utf-8'))
+            fout.write((line[0]+'\n').encode('utf-8'))
 fout.close()
 
 # Get POS to id table
 pos = set()
-data_dir = ['data/train.conllu', 'data/dev.conllu', 'data/test.conllu']
+data_dir = ['./train.conllu', './dev.conllu', './test.conllu']
 for dataset in data_dir:
     with open(dataset, encoding='utf-8') as fin:
         for line in fin:
@@ -33,5 +33,5 @@ for dataset in data_dir:
 fout = open('pos2id.table', 'w')
 pos = list(pos)
 for idx, item in enumerate(pos):
-    fout.write(str(idx)+'\t'+item+'\n')
+    fout.write(item+'\n')
 fout.close()

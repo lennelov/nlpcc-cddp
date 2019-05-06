@@ -11,8 +11,8 @@ import lib.layers as layers
 import lib.utils.config
 import model_base
 
-class ChunkingModel(model_base.ModelBase):
-    """Bi-LSTM-CRF Chunking Model"""
+class DependencyModel(model_base.ModelBase):
+    """Dependency Model"""
     def __init__(self, config):
         super(ChunkingModel, self).__init__(config)
 
