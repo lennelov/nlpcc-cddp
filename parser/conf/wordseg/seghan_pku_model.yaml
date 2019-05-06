@@ -1,0 +1,144 @@
+---
+
+# Dataset metadata
+default_dataset: &default_dataset
+    type: PythonDataset
+    delim: "\t"
+    buffer_size: 20000
+    shuffle: True
+    map_tables:
+        token2id:
+            path: data/wordseg/sighan05_pku/char2id1.dict
+        tag2id:
+            path: data/wordseg/sighan05_pku/label2id.dict
+        gram2id:
+            path: data/wordseg/sighan05_pku/gram2id.dict
+
+    slots: 
+        tokens: &default_slot
+            index: 0
+            type: sequence
+            delim: " "
+            map_table: token2id
+            max_length: 1019
+            pad: 0
+        tags:
+            index: 1
+            map_table: tag2id
+            << : *default_slot
+        nwords:
+            index: 2
+            type: value
+            value_type: int64
+        grams:
+            index: 3
+            map_table: gram2id
+            << : *default_slot
+            
+
+pred_dataset: &pred_dataset
+    type: PythonDataset
+    delim: "\t"
+    buffer_size: 20000
+    shuffle: True
+    map_tables:
+        token2id:
+            path: data/wordseg/sighan05_pku/char2id1.dict
+        tag2id:
+            path: data/wordseg/sighan05_pku/label2id.dict
+        gram2id:
+            path: data/wordseg/sighan05_pku/gram2id.dict
+
+    slots: 
+        tokens:
+            << : *default_slot
+        tags: 
+            << : *default_slot
+        nwords:
+            index: 1
+            type: value
+            value_type: int64
+        grams:
+            index: 2
+            map_table: gram2id
+            << : *default_slot
+
+train_dataset: &train_dataset
+    path: data/wordseg/sighan05_pku/train.data
+    << : *default_dataset
+
+dev_dataset: &dev_dataset
+    shuffle: False
+    path: data/wordseg/sighan05_pku/test.data
+    << : *default_dataset
+
+test_dataset: &test_dataset
+    shuffle: False
+    path: data/wordseg/sighan05_pku/test.data
+    << : *default_dataset
+
+predict_dataset: &predict_dataset
+    shuffle: False
+    path: data/wordseg/sighan05_pku/test.data
+    << : *pred_dataset
+
+logging:
+    file: results/wordseg_pku/lstm_crf/logging.out
+    level: 3
+
+# Model config
+model:
+    model_name: ChunkingModel
+    use_word_pretrain_emb: False
+    # word_emb_finetune: False
+    # word2vec_dict: 'data/conll2003/glove_emb_conll' 
+    # gram2vec_dict: 'data/conll2003/glove_emb_conll'
+    vocab_size : 4687
+    gram_size : 131333
+
+    use_crf: True
+    max_length: 1019
+    emb_size: 64
+    gram_emb_size: 64
+    hidden_size : 256
+    batch_size: 200
+    optimizer: Momentum
+    learning_rate: 0.0005
+    use_clip_by_norm: True
+    decay_step: 300
+    decay_rate: 0.9
+    n_classes: 6
+    dropout_rate: 0.3
+    metric: NERMetric
+
+# Estimator
+estimator:
+    type: PythonSequenceLabellingEstimator
+    train_dataset: *train_dataset
+    eval_datasets:
+        # - *train_dataset
+        - *dev_dataset
+        # - *test_dataset
+    eval_op_path: results/wordseg_pku/lstm_crf_short/summary/eval.output
+    # infer_dataset: *predict_dataset
+    # infer_op_path: results/wordseg_pku/lstm_crf/summary/infer.output
+
+    batch_size: 200
+    max_epochs: 40
+
+    use_crf: True
+    chunking: True
+    use_entity_f1: True
+    word2id: data/wordseg/sighan05_pku/char2id1.dict
+    label2id: data/wordseg/sighan05_pku/label2id.dict
+    infer2id: data/wordseg/sighan05_pku/infer2id.dict
+    infer2id_ent: data/wordseg/sighan05_pku/infer2id_ent.dict
+    checkpoint_dir: results/wordseg_pku/lstm_crf_short
+    best_checkpoint_dir: results/wordseg_pku/lstm_crf_short/best
+    # learning_rate: 0.001
+    model_name: region_sequence_labbelling_model
+    save_checkpoints_steps: 2000
+    eval_interval_steps: 100
+    max_training_steps: 4000
+    log_every_n_steps: 100
+    display_eval: False

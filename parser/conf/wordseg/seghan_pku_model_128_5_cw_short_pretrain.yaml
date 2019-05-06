@@ -1,0 +1,83 @@
+default_dataset:
+  buffer_size: 47800
+  delim: "\t"
+  map_tables: &id001
+    tag2id: {path: data/wordseg/sighan05_pku/label2id.dict}
+    token2id: {path: data/wordseg/sighan05_pku/char.vocab}
+  shuffle: true
+  slots: &id002
+    nwords: {index: 2, type: value, value_type: int64}
+    tags: {delim: ' ', index: 1, map_table: tag2id, max_length: 50, pad: 0, type: sequence}
+    tokens: {delim: ' ', index: 0, map_table: token2id, max_length: 50, pad: 0, type: sequence}
+  type: PythonDataset
+dev_dataset: &id003
+  buffer_size: 10000
+  delim: "\t"
+  map_tables: *id001
+  path: data/wordseg/sighan05_pku/test.data.short
+  shuffle: false
+  slots: *id002
+  type: PythonDataset
+train_dataset: &id004
+    buffer_size: 47800
+    delim: "\t"
+    map_tables: *id001
+    path: data/wordseg/sighan05_pku/train.data.short
+    shuffle: true
+    slots: *id002
+    type: PythonDataset
+estimator:
+  batch_size: 400
+  checkpoint_dir: results/wordseg_pku/region_emb_128_5_cw_short_pretrain
+  display_eval: true
+  eval_datasets:
+  - *id004
+  - *id003
+  eval_interval_steps: 100
+  eval_op_path: results/wordseg_pku/region_emb_128_5_cw_short_pretrain/summary/eval.output
+  infer2id: data/wordseg/sighan05_pku/infer2id.dict
+  label2id: data/wordseg/sighan05_pku/label2id.dict
+  log_every_n_steps: 100
+  max_epochs: 40
+  max_training_steps: 18000
+  model_name: region_sequence_labbelling_model
+  save_checkpoints_steps: 9000
+  train_dataset: *id004
+  type: PythonSequenceLabellingEstimator
+  use_crf: true
+  use_entity_f1: false
+  word2id: data/wordseg/sighan05_pku/char.vocab
+# logging: {file: results/wordseg_pku/region_emb_128_5_cw_short_pretrain/logging.out, level: 3}
+model: {batch_size: 400, context_word: false, dropout_rate: 0.3, emb_size: 128, hidden_size: 256,
+  learning_rate: 0.005, max_length: 50, metric: NERMetric, model_name: PretrainRegionChunkingModel,
+  n_classes: 6, optimizer: Adam, region_size: 5, use_crf: true, use_word_pretrain_emb: true,
+  vocab_size: 5151, word2vec_dict: 'data/wordseg/pretrain/char.npz',
+  word2context_dict: 'data/wordseg/pretrain/context.npz', word_emb_finetune: false, context_emb_finetune: false}
+pred_dataset:
+  buffer_size: 10000
+  delim: "\t"
+  map_tables: &id005
+    tag2id: {path: data/wordseg/sighan05_pku/label2id.dict}
+    token2id: {path: data/wordseg/sighan05_pku/char.vocab}
+  shuffle: true
+  slots: &id006
+    nwords: {index: 1, type: value, value_type: int64}
+    tags: {delim: ' ', index: 0, map_table: token2id, max_length: 50, pad: 0, type: sequence}
+    tokens: {delim: ' ', index: 0, map_table: token2id, max_length: 50, pad: 0, type: sequence}
+  type: PythonDataset
+predict_dataset:
+  buffer_size: 10000
+  delim: "\t"
+  map_tables: *id005
+  path: data/wordseg/sighan05_pku/test.data.short
+  shuffle: false
+  slots: *id006
+  type: PythonDataset
+test_dataset:
+  buffer_size: 10000
+  delim: "\t"
+  map_tables: *id001
+  path: data/wordseg/sighan05_pku/test.data.short
+  shuffle: false
+  slots: *id002
+  type: PythonDataset

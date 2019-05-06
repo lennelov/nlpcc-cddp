@@ -1,0 +1,77 @@
+---
+
+# Dataset metadata
+default_dataset: &default_dataset
+    type: PythonDataset
+    delim: "\t"
+    buffer_size: 10000
+    shuffle: True
+    map_tables:
+        token2id:
+            path: data/conll2003/ner/word2id.dict
+        tag2id:
+            path: data/conll2003/ner/tag2id.dict
+
+    slots: 
+        tokens: &default_slot
+            index: 0
+            type: sequence
+            delim: " "
+            map_table: token2id
+            max_length: 50
+            pad: 0
+        tags:
+            index: 1
+            map_table: tag2id
+            pad: 0
+            << : *default_slot
+
+train_dataset: &train_dataset
+    path: data/conll2003/ner/conll2003.eng.train.data
+    << : *default_dataset
+
+dev_dataset: &dev_dataset
+    path: data/conll2003/ner/conll2003.eng.test.data
+    << : *default_dataset
+
+test_dataset: &test_dataset
+    path: data/conll2003/ner/conll2003.eng.test.data
+    << : *default_dataset
+
+# Model config
+model:
+    model_name: RegionModel
+    use_crf: False
+    concat_win_size: 7
+    vocab_size : 5670
+    region_size: 9
+    max_length : 60
+    emb_size : 128
+    fc_in:  896 # concat_win_size * region_size_number * emb_size
+    fc_out: 8
+    batch_size: 16
+    optimizer: Adam
+    learning_rate: 0.001
+    n_classes: 8
+
+# Estimator
+estimator:
+    type: PythonEstimator
+    train_dataset: *train_dataset
+    eval_datasets:
+        - *dev_dataset
+    infer_dataset: *test_dataset
+
+    batch_size: 8
+    max_epochs: 50
+    region_size: 15
+
+    checkpoint_dir: results/v2
+    learning_rate: 0.001
+    model_name: region_v1
+    save_checkpoints_steps: 100000
+    eval_interval_steps: 1000
+    max_training_steps: 100000
+    log_every_n_steps: 16
+    use_crf: False
+

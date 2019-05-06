@@ -1,0 +1,84 @@
+---
+model_name: region_matcher
+
+# Dataset metadata
+default_dataset: &default_dataset
+    delim: "\t"
+    slots: &default_slots
+        -             
+            index: 0
+            name: x
+            type: sequence
+            value_type: int
+            delim: " "
+            max_length: 330
+            pad: 0
+            alignment: center
+        -
+            index: 1
+            name: y
+            pad: 4
+            << : *default_slots
+
+train_dataset: &train_dataset
+    path: data/train.ids
+    << : *default_dataset
+
+dev_dataset: &dev_dataset
+    path: data/test.ids
+    << : *default_dataset
+
+infer_dataset: &infer_dataset
+    path: data/infer.data
+    delim: "\t"
+    slots:
+        -             
+            index: 0
+            name: x
+            << : *default_slots
+            max_length : 330
+        -
+            index: 1
+            name: y
+            pad: 4
+            << : *default_slots
+            max_length : 330
+        -
+            index: 2
+            name: chars
+            delim: " "
+            type: sequence
+            value_type: str
+            max_length: 330
+            pad: "?"
+            alignment: "center"
+
+&hidden_size : 128 
+
+# Model config
+model:
+    use_crf: False
+    concat_win_size: 7
+    vocab_size : 5170
+    region_size: 7
+    max_length : 330
+    emb_size : 128
+    fc_in: 6272 #896 # concat_win_size * region_size_number * emb_size
+    fc_out: 5
+    batch_size: 16
+
+# Estimator
+estimator:
+    train_dataset: *train_dataset
+    dev_dataset: *dev_dataset
+    infer_dataset: *infer_dataset
+    char2id_dict: data/char2id.dict
+    batch_size: 64
+    max_epochs: 50
+    region_size: 15
+    checkpoint_dir: model/
+    learning_rate: 0.001
+    checkpoint_dir: model/
+    model_name: region_v1
+    use_crf: False
+

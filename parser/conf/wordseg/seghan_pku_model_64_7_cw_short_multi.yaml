@@ -1,0 +1,90 @@
+default_dataset:
+  buffer_size: 47800
+  delim: "\t"
+  map_tables: &id001
+    gram2id: {path: data/wordseg/sighan05_pku/gram2id.dict}
+    tag2id: {path: data/wordseg/sighan05_pku/label2id.dict}
+    token2id: {path: data/wordseg/sighan05_pku/char2id1.dict}
+  shuffle: true
+  slots: &id002
+    grams: {delim: ' ', index: 3, map_table: gram2id, max_length: 50, pad: 0, type: sequence}
+    nwords: {index: 2, type: value, value_type: int64}
+    tags: {delim: ' ', index: 1, map_table: tag2id, max_length: 50, pad: 0, type: sequence}
+    tokens: {delim: ' ', index: 0, map_table: token2id, max_length: 50, pad: 0, type: sequence}
+  type: PythonDataset
+dev_dataset: &id003
+  buffer_size: 47800
+  delim: "\t"
+  map_tables: *id001
+  path: data/wordseg/sighan05_pku/test.data.short.gram
+  shuffle: false
+  slots: *id002
+  type: PythonDataset
+estimator:
+  batch_size: 50
+  checkpoint_dir: results/wordseg_pku/region_emb_64_7_cw_short_multi
+  chunking: true
+  display_eval: true
+  eval_datasets:
+  - *id003
+  eval_interval_steps: 100
+  eval_op_path: results/wordseg_pku/region_emb_64_7_cw_short_multi/summary/eval.output
+  eval_with_input: true
+  infer2id: data/wordseg/sighan05_pku/infer2id.dict
+  infer2id_ent: data/wordseg/sighan05_pku/infer2id_ent.dict
+  label2id: data/wordseg/sighan05_pku/label2id.dict
+  log_every_n_steps: 100
+  max_epochs: 40
+  max_training_steps: 40000
+  model_name: region_sequence_labbelling_model
+  save_eval_to_file: false
+  tolerance: 5
+  train_dataset: &id006
+    buffer_size: 47800
+    delim: "\t"
+    map_tables: *id001
+    path: data/wordseg/sighan05_pku/train.data.short.gram
+    shuffle: true
+    slots: *id002
+    type: PythonDataset
+  type: PythonSequenceLabellingEstimator
+  use_crf: true
+  use_entity_f1: true
+  word2id: data/wordseg/sighan05_pku/char2id1.dict
+# logging: {file: results/wordseg_pku/region_emb_64_7_cw_short/logging.out, level: 3}
+model: {batch_size: 50, context_word: false, decay_rate: 1.0, decay_step: 1400, dropout_rate: 0.1,
+  emb_size: 64, gram_emb_size: 64, gram_size: 131333, hidden_size: 256, learning_rate: 0.005,
+  max_length: 50, metric: NERMetric, model_name: MultiRegionChunkingModel, n_classes: 6,
+  optimizer: Adam, region_size: 7, use_clip_by_norm: true, use_crf: true, use_word_pretrain_emb: false,
+  vocab_size: 4687, share: false}
+pred_dataset:
+  buffer_size: 15000
+  delim: "\t"
+  map_tables: &id004
+    gram2id: {path: data/wordseg/sighan05_pku/gram2id.dict}
+    tag2id: {path: data/wordseg/sighan05_pku/label2id.dict}
+    token2id: {path: data/wordseg/sighan05_pku/char2id1.dict}
+  shuffle: false
+  slots: &id005
+    grams: {delim: ' ', index: 2, map_table: gram2id, max_length: 50, pad: 0, type: sequence}
+    nwords: {index: 1, type: value, value_type: int64}
+    tags: {delim: ' ', index: 0, map_table: token2id, max_length: 50, pad: 0, type: sequence}
+    tokens: {delim: ' ', index: 0, map_table: token2id, max_length: 50, pad: 0, type: sequence}
+  type: PythonDataset
+predict_dataset:
+  buffer_size: 15000
+  delim: "\t"
+  map_tables: *id004
+  path: data/wordseg/sighan05_pku/test.data.short.gram
+  shuffle: false
+  slots: *id005
+  type: PythonDataset
+test_dataset:
+  buffer_size: 15000
+  delim: "\t"
+  map_tables: *id001
+  path: data/wordseg/sighan05_pku/test.data.short.gram
+  shuffle: false
+  slots: *id002
+  type: PythonDataset
+train_dataset: *id006
