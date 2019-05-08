@@ -88,19 +88,9 @@ class DependencyModel(model_base.ModelBase):
         # seq_logits = tf.reshape(seq_logits, [-1, self.config.max_length, self.config.n_classes])
 
         weights = tf.cast(tf.not_equal(tokens, 0), dtype=tf.float32)
-        if config.use_crf:
-            crf_params = tf.get_variable("crf", [n_classes, n_classes], dtype=tf.float32)
-            predicted, _ = tf.contrib.crf.crf_decode(seq_logits, crf_params, nwords)
-            log_likelihood, trans_params = tf.contrib.crf.crf_log_likelihood(seq_logits, label, nwords, crf_params)
-
-            self.loss_op = tf.reduce_mean(-log_likelihood)
-            self.trans_params = trans_params
-
-            self.infer_op = tf.one_hot(predicted, depth=n_classes, on_value=1.0, off_value=0.0, axis=-1)
-        else:
-            self.loss_op = tf.contrib.seq2seq.sequence_loss(seq_logits, label, weights, average_across_timesteps=True, \
-                    average_across_batch=True)
-            self.infer_op = seq_logits
+        self.loss_op = tf.contrib.seq2seq.sequence_loss(seq_logits, label, weights, average_across_timesteps=True, \
+                average_across_batch=True)
+        self.infer_op = seq_logits
 
         self.logits = seq_logits
         self.logits_op = seq_logits
