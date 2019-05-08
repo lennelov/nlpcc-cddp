@@ -64,16 +64,15 @@ class MultiClassificationMetricLayer(Layer):
         return metrics
 
 class UASMetricLayer(Layer):
-	def __init__(self, name='UASMetricLayer', **kwargs):
-		Layer.__init__(self, name, **kwargs)
+    def __init__(self, name='UASMetricLayer', **kwargs):
+        Layer.__init__(self, name, **kwargs)
 
-	def _forward(self, pred, label, nwords=None, weights=None):
-		pred = tf.cast(pred, tf.int64)
-		label = tf.cast(label, tf.int64)
-        uas = tf.metrics.accuracy(labels=actual, predictions=predicted, weights=weights, name='acc_op')
-    	metrics = {'uas': uas}
-    	return metrics
-
+    def _forward(self, pred, label, weights=None):
+        pred = tf.cast(pred, tf.int64)
+        label = tf.cast(label, tf.int64)
+        uas = tf.metrics.accuracy(labels=label, predictions=pred, weights=weights, name='acc_op')
+        metrics = {'uas': uas}
+        return metrics
 
 class NERMetricLayer(Layer):
     def __init__(self, name='NERMetricLayer', **kwargs):

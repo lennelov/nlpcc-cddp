@@ -92,8 +92,8 @@ class DependencyModel(model_base.ModelBase):
         self.logits = seq_logits
         self.logits_op = seq_logits
         
-        metric_layer = lib.layers.MultiClassificationMetricLayer()
-        self.metric = metric_layer(self.logits_op, self.labels, self.config.n_classes, weights=weights)
+        metric_layer = lib.layers.UASMetricLayer()
+        self.metric = metric_layer(label, label, weights=weights)
 
     def model_fn(self, inputs, mode):
         # Build graph
@@ -110,7 +110,6 @@ class DependencyModel(model_base.ModelBase):
         }
         predictions.update(inputs)
         export_outputs = {'predict_output': tf.estimator.export.PredictOutput(predictions)}
-
         if mode == tf.estimator.ModeKeys.PREDICT:
             return tf.estimator.EstimatorSpec(
                 mode, 
@@ -143,7 +142,7 @@ class DependencyModel(model_base.ModelBase):
             optimizer = O(learning_rate=learning_rate, momentum=0.95)
         else:
             optimizer = O(learning_rate=learning_rate)
-
+        
         tvars = tf.trainable_variables()
         if hasattr(self.config, 'use_clip_by_norm') and self.config.use_clip_by_norm:
             grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss_op, tvars), clip_norm=1)

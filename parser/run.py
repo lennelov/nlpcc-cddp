@@ -8,7 +8,7 @@ import warnings
 import time
 import os
 
-#os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 # 默认为0：输出所有log信息
 # 设置为1：进一步屏蔽INFO信息
 # 设置为2：进一步屏蔽WARNING信息

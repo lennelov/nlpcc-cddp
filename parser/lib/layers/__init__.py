@@ -76,6 +76,7 @@ from lib.layers.metric_layer import DefaultRankingMetricLayer
 from lib.layers.metric_layer import MultiClassificationMetricLayer
 from lib.layers.metric_layer import DefaultLossMetricLayer
 from lib.layers.metric_layer import NERMetricLayer
+from lib.layers.metric_layer import UASMetricLayer
 
 from lib.layers.pointer_network_layer import PointerNetDecoder
 
