@@ -40,10 +40,7 @@ class DependencyModel(model_base.ModelBase):
         else:
             metric_layer = lib.layers.MultiClassificationMetricLayer()
 
-        if config.use_crf:
-            self.metric = metric_layer(self.logits_op, self.labels, self.config.n_classes, self.trans_params, self.seq_len)
-        else:
-            self.metric = metric_layer(self.logits_op, self.labels, self.config.n_classes)
+        self.metric = metric_layer(self.logits_op, self.labels, self.config.n_classes)
 
     def build_graph(self, inputs, mode):
         config = self.config
@@ -95,12 +92,8 @@ class DependencyModel(model_base.ModelBase):
         self.logits = seq_logits
         self.logits_op = seq_logits
         
-        if config.use_crf:
-            metric_layer = lib.layers.NERMetricLayer()
-            self.metric = metric_layer(self.logits_op, self.labels, self.config.n_classes, weights=weights, trans_params=self.trans_params, nwords=nwords)
-        else:
-            metric_layer = lib.layers.MultiClassificationMetricLayer()
-            self.metric = metric_layer(self.logits_op, self.labels, self.config.n_classes, weights=weights)
+        metric_layer = lib.layers.MultiClassificationMetricLayer()
+        self.metric = metric_layer(self.logits_op, self.labels, self.config.n_classes, weights=weights)
 
     def model_fn(self, inputs, mode):
         # Build graph

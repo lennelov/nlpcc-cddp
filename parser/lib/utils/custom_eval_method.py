@@ -9,10 +9,8 @@ import json
 import re
 import logging
 import tensorflow as tf
-import sklearn
 import string
 from collections import Counter
-from sklearn import metrics
 
 logger = logging.getLogger(__name__)
 
