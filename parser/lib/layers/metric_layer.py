@@ -67,12 +67,10 @@ class UASMetricLayer(Layer):
 	def __init__(self, name='UASMetricLayer', **kwargs):
 		Layer.__init__(self, name, **kwargs)
 
-	def _forward(self, pred, label):
+	def _forward(self, pred, label, nwords=None, weights=None):
 		pred = tf.cast(pred, tf.int64)
 		label = tf.cast(label, tf.int64)
-        n_labels = tf.shape(label)[0]
-        n_correct_labels = tf.reduce_sum(tf.equal(pred, label))
-    	uas = n_correct_labels / float(n_labels)
+        uas = tf.metrics.accuracy(labels=actual, predictions=predicted, weights=weights, name='acc_op')
     	metrics = {'uas': uas}
     	return metrics
 
