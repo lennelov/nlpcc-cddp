@@ -7,23 +7,41 @@ default_dataset: &default_dataset
     buffer_size: 5000
     shuffle: True
     map_tables:
-        token2id:
+        word2id:
             path: data/word2id.table
         pos2id:
             path: data/pos2id.table
 
     slots: 
-        tokens: &default_slot
+        idx: &default_slot
             index: 0
             type: sequence
             delim: " "
-            map_table: token2id
+            value_type: int64
             max_length: 200
             pad: 0
-        tags:
+        word: &seq_slot
             index: 1
-            map_table: tag2id
+            type: sequence
+            delim: " "
+            map_table: word2id
+            max_length: 200
+            pad: 0
+        upos:
+            index: 2
+            map_table: pos2id
+            << : *seq_slot
+        xpos:
+            index: 3
+            map_table: pos2id
+            << : *seq_slot
+        head:
+            index: 4
             << : *default_slot
+        nwords:
+            index: 5
+            type: value
+            value_type: int64
             
 
 pred_dataset: &pred_dataset
@@ -32,42 +50,56 @@ pred_dataset: &pred_dataset
     buffer_size: 2000
     shuffle: True
     map_tables:
-        token2id:
+        word2id:
             path: data/word2id.table
         pos2id:
             path: data/pos2id.table
 
     slots: 
-        tokens:
-            << : *default_slot
-        tags: 
-            << : *default_slot
-        nwords:
+        idx: &default_slot
+            index: 0
+            type: sequence
+            delim: " "
+            value_type: int64
+            max_length: 200
+            pad: 0
+        word: &seq_slot
             index: 1
+            type: sequence
+            delim: " "
+            map_table: word2id
+            max_length: 200
+            pad: 0
+        upos:
+            index: 2
+            map_table: pos2id
+            << : *seq_slot
+        xpos:
+            index: 3
+            map_table: pos2id
+            << : *seq_slot
+        nwords:
+            index: 4
             type: value
             value_type: int64
-        grams:
-            index: 2
-            map_table: gram2id
-            << : *default_slot
 
 train_dataset: &train_dataset
-    path: data/train.conllu
+    path: data/train.new
     << : *default_dataset
 
 dev_dataset: &dev_dataset
     shuffle: False
-    path: data/dev.conllu
+    path: data/dev.new
     << : *default_dataset
 
 test_dataset: &test_dataset
     shuffle: False
-    path: data/test.conllu
+    path: data/test.new
     << : *default_dataset
 
 predict_dataset: &predict_dataset
     shuffle: False
-    path: data/test.conllu
+    path: data/test.new
     << : *pred_dataset
 
 logging:
@@ -77,25 +109,23 @@ logging:
 # Model config
 model:
     model_name: DependencyModel
-    use_word_pretrain_emb: True
-    # word_emb_finetune: False
+    use_word_pretrain_emb: False
+    word_emb_finetune: False
     word2vec_dict: 'data/embedding/embedding.50' 
     vocab_size : 524602
 
     use_crf: False
     max_length: 200
     emb_size: 50
-    gram_emb_size: 64
-    hidden_size : 256
     batch_size: 200
     optimizer: Adam
-    learning_rate: 0.0005
+    learning_rate: 0.005
     use_clip_by_norm: True
     decay_step: 300
     decay_rate: 0.9
-    n_classes: 6
     dropout_rate: 0.3
-#    metric: NERMetric
+    n_classes: 6
+    metric: NERMetric
 
 # Estimator
 estimator:
@@ -116,9 +146,9 @@ estimator:
     chunking: False
     use_entity_f1: False
     word2id: data/word2id.table
-#    label2id: data/wordseg/sighan05_pku/label2id.dict
-#    infer2id: data/wordseg/sighan05_pku/infer2id.dict
-    checkpoint_dir: results/wordseg_pku/lstm_crf_short
+#    label2id: data/label2id.table
+#    infer2id: data/infer2id.table
+    checkpoint_dir: results/checkpoint
     best_checkpoint_dir: results/best
     model_name: dependency_parsing_model
     save_checkpoints_steps: 2000

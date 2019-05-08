@@ -14,7 +14,7 @@ import model_base
 class DependencyModel(model_base.ModelBase):
     """Dependency Model"""
     def __init__(self, config):
-        super(ChunkingModel, self).__init__(config)
+        super(DependencyModel, self).__init__(config)
 
     def build_loss_and_metrics(self):
         margin = 1.0
@@ -52,37 +52,20 @@ class DependencyModel(model_base.ModelBase):
         # Embedding Layer
         if not config.use_word_pretrain_emb:
             emb_layer = layers.EmbeddingLayer(config.vocab_size, config.emb_size, name='emb')
-            gram_emb_layer = layers.EmbeddingLayer(config.gram_size, config.gram_emb_size, name='emb_g')
-            # start_emb_layer = layers.EmbeddingLayer(config.vocab_size, config.gram_emb_size, name='emb_gs')
         else:
             emb_layer = layers.InitializedEmbeddingLayer(config.vocab_size, config.emb_size, config.word2vec_dict, trainable=config.word_emb_finetune, name='emb')
-            gram_emb_layer = layers.InitializedEmbeddingLayer(config.gram_size, config.gram_emb_size, config.word2vec_dict, trainable=config.word_emb_finetune, name='emb_g')
 
         # Build graph
-        tokens = inputs['tokens']
-        label = tf.cast(inputs['tags'], tf.int32)
-        nwords = tf.cast(inputs['nwords'], tf.int32)
-        grams = inputs['grams']
-        grams_f = tf.concat([grams[:,-1:], grams[:,:-1]], axis=-1)
-        # grams_f = grams[:,:-1]
-        # grams_f = tf.concat([tf.add(tf.multiply(grams[:,-1:],0),1), grams[:,:-1]], axis=-1)
+        tokens = inputs['word']
+        label = tf.cast(inputs['head'], tf.int32)
         self.labels = label
+        nwords = tf.cast(inputs['nwords'], tf.int32)
         n_classes = self.config.n_classes
 
         emb = emb_layer(tokens)
-        emb_gram = gram_emb_layer(grams)
-        emb_gram_f = gram_emb_layer(grams_f)
-
-        emb = tf.concat([emb, emb_gram, emb_gram_f], axis=-1)
-
         emb = tf.layers.dropout(emb, rate=config.dropout_rate, training=training)
 
-        emb_f = tf.concat([emb[:,:,:config.emb_size],emb[:,:,-config.emb_size:]], axis=-1)
-        emb_b = emb[:,:,:2*config.emb_size]
-
         # h, _ = lstm_layer(emb, x_length=nwords)
-        emb_f = tf.transpose(emb_f, perm=[1, 0, 2])
-        emb_b = tf.transpose(emb_b, perm=[1, 0, 2])
         emb = tf.transpose(emb, perm=[1, 0, 2])
         lstm_cell_fw = tf.contrib.rnn.LSTMBlockFusedCell(config.hidden_size)
         lstm_cell_bw = tf.contrib.rnn.LSTMBlockFusedCell(config.hidden_size)
