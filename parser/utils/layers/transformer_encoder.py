@@ -1,18 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-
-__author__ = 'Chao Qiao'
-__copyright__ = 'Copyright (c) 2018 bytedance.com, Inc.'
-__license__ = 'MIT'
-__version__ = '0.0.1'
-__email__ = 'qiaochao@bytedance.com'
-__status__ = 'Development'
-
 import tensorflow as tf
-from lib.layers.layer import Layer
-from lib.layers.attention_layer import MultiHeadsDotProductAttentionLayer
-from lib.layers.fc_layer import SeqFCLayer
+from utils.layers.layer import Layer
+from utils.layers.attention_layer import MultiHeadsDotProductAttentionLayer
+from utils.layers.fc_layer import SeqFCLayer
 
 import tensorflow as tf
 

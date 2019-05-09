@@ -3,8 +3,8 @@
 
 import logging
 import tensorflow as tf
-import lib
-import lib.layers as layers
+import utils
+import utils.layers as layers
 
 logger = logging.getLogger(__name__)
 

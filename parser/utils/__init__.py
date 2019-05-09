@@ -5,8 +5,6 @@ import os
 import logging
 import logging.config
 
-from python_dataset import PythonDataset
-
 
 initialized = False
 def initialize_logging(out, level='DEBUG'):
@@ -35,10 +33,14 @@ def initialize_logging(out, level='DEBUG'):
     })
     initialized = True
 
+from python_dataset import PythonDataset
 def get_dataset(config):
     return PythonDataset(config)
 
-
+from python_estimator import PythonEstimator
+def get_estimator(config, model):
+    logging.debug('estimator type: %s', config.type) 
+    return PythonEstimator(config, model)
 
 def main():
     pass

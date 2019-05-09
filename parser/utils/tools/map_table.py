@@ -6,8 +6,8 @@ import logging
 import tensorflow as tf
 logger = logging.getLogger(__name__)
 
-from lib.utils.funcs import tf_type_mapping
-from lib.utils.funcs import python_type_mapping
+from utils.tools.funcs import tf_type_mapping
+from utils.tools.funcs import python_type_mapping
 
 class MapTable(object):
     def __init__(self, path, default_value="",

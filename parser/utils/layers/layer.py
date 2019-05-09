@@ -1,14 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-
-__author__ = 'Chao Qiao'
-__copyright__ = 'Copyright (c) 2018 bytedance.com, Inc.'
-__license__ = 'MIT'
-__version__ = '0.0.1'
-__email__ = 'qiaochao@bytedance.com'
-__status__ = 'Development'
-
 import json
 import logging
 import tensorflow as tf

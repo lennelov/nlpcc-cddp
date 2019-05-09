@@ -9,10 +9,10 @@ import fileinput
 import collections
 import tensorflow as tf
 
-from lib.utils import MapTable
-from lib.utils import tf_type_mapping
-from lib.utils import python_type_mapping
-from lib.utils import Config
+from utils.tools import MapTable
+from utils.tools import tf_type_mapping
+from utils.tools import python_type_mapping
+from utils.tools import Config
 
 logger = logging.getLogger(__name__)
 

@@ -4,9 +4,9 @@
 
 import tensorflow as tf
 
-from lib.layers.layer import Layer
-from lib.layers.fc_layer import SeqFCLayer
-from lib.layers.functions_layer import masked_softmax
+from utils.layers.layer import Layer
+from utils.layers.fc_layer import SeqFCLayer
+from utils.layers.functions_layer import masked_softmax
 
 
 class AttentionLayer(Layer):

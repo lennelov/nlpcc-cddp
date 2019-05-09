@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import tensorflow as tf
 from tensorflow.python import debug as tf_debug
-from lib import get_dataset
+from utils import get_dataset
 import traceback
 
 logger = logging.getLogger(__name__)

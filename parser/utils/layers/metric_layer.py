@@ -5,8 +5,8 @@
 import numpy as np
 import tensorflow as tf
 from .layer import Layer
-from lib.utils.tf_metrics import recall, precision, f1
-from lib.utils.conlleval import entity_f1
+from utils.tools.tf_metrics import recall, precision, f1
+from utils.tools.conlleval import entity_f1
 
 
 class DefaultClassificationMetricLayer(Layer):
@@ -73,42 +73,3 @@ class UASMetricLayer(Layer):
         uas = tf.metrics.accuracy(labels=label, predictions=pred, weights=weights, name='acc_op')
         metrics = {'uas': uas}
         return metrics
-
-class NERMetricLayer(Layer):
-    def __init__(self, name='NERMetricLayer', **kwargs):
-        Layer.__init__(self, name, **kwargs)
-
-    def _forward(self, logits, label, n_classes, trans_params=None, nwords=None, weights=None):
-        actual = tf.cast(label, tf.int64)
-        assert trans_params is not None and nwords is not None, 'CRF decode parameters wrong!'
-        predicted, _ = tf.contrib.crf.crf_decode(logits, trans_params, nwords)
-
-        # Token-level F1
-        pos = [i for i in range(n_classes)]
-        accuracy = tf.metrics.accuracy(labels=actual, predictions=predicted, weights=weights, name='acc_op')
-        rec = recall(labels=actual, predictions=predicted, num_classes=n_classes, pos_indices=pos, average='weighted', weights=weights)
-        prec = precision(labels=actual, predictions=predicted, num_classes=n_classes, pos_indices=pos, average='weighted', weights=weights)
-        f1_op = f1(labels=actual, predictions=predicted, num_classes=n_classes, pos_indices=pos, average='weighted', weights=weights)
-
-        tf.summary.scalar('precision', prec[1])
-        tf.summary.scalar('recall', rec[1])
-        tf.summary.scalar('accuracy', accuracy[1])
-        tf.summary.scalar('f1', f1_op[1])
-        metrics = {'accuracy': accuracy, 'precision': prec, 'recall': rec, 'f1': f1_op}
-        return metrics
-
-class DefaultRankingMetricLayer(Layer):
-    def __init__(self, name='DefaultRankingMetricLayer', **kwargs):
-        Layer.__init__(self, name, **kwargs)
-
-    def _forward(self, score, label=None):
-        score = tf.reshape(score, [-1, 2])
-        pos_score = score[:, 0]
-        neg_score = score[:, 1]
-        predicted = tf.cast(tf.greater(pos_score, neg_score), tf.int64)
-        actual = tf.cast(tf.equal(predicted, predicted), tf.int64)
-
-        accuracy = tf.metrics.accuracy(labels=actual, predictions=predicted, name='acc_op')
-        metrics = {'accuracy': accuracy}
-        return metrics
-

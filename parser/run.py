@@ -15,9 +15,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 # 设置为3：进一步屏蔽ERROR信息
 
 import tensorflow as tf
-import lib
-from lib.utils import config
-from lib.estimators import get_estimator
+import utils
+from utils.tools import config
+from utils import get_estimator
 import models
 
 
@@ -47,9 +47,9 @@ def main():
         log_dir = os.path.dirname(conf.logging.file)
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        lib.initialize_logging(open(conf.logging.file, 'w'), conf.logging.level)
+        utils.initialize_logging(open(conf.logging.file, 'w'), conf.logging.level)
     else:
-        lib.initialize_logging(sys.stdout, 'DEBUG')
+        utils.initialize_logging(sys.stdout, 'DEBUG')
 
     if not conf.estimator.checkpoint_dir:
         conf.estimator.checkpoint_dir = 'local_results/' + args.conf

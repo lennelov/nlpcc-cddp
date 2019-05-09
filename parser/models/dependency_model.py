@@ -7,8 +7,8 @@ import sys
 import tensorflow as tf
 import numpy as np
 
-import lib.layers as layers
-import lib.utils.config
+import utils.layers as layers
+import utils.tools.config
 import model_base
 
 class DependencyModel(model_base.ModelBase):
@@ -67,5 +67,5 @@ class DependencyModel(model_base.ModelBase):
         self.logits = seq_logits
         self.logits_op = seq_logits
         
-        metric_layer = lib.layers.UASMetricLayer()
+        metric_layer = utils.layers.UASMetricLayer()
         self.metric = metric_layer(label, label, weights=weights)
