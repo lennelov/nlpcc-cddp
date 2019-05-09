@@ -149,30 +149,6 @@ class PythonEstimator(object):
         writer.close()
         self._restore_checkpoint(use_best=use_best)
 
-    # def build_graph(self, mode, use_best=False):
-    #     self.action_mode = mode
-    #     self.fetch_dict = {}
-    #     self.add_estimator_inputs(mode)
-    #     if mode == 'EXPORT':
-    #         self.estimator_spec = self.model.model_fn(self.model_inputs, mode=tf.estimator.ModeKeys.PREDICT)
-    #         self.fetch_dict[mode] = self.make_fetch_dict(mode)
-    #     else:
-    #         self.estimator_spec = self.model.model_fn(self.model_inputs, mode=mode)
-    #         self.set_eval_and_summary()
-    #         if mode == tf.estimator.ModeKeys.TRAIN:
-    #             self.global_step = tf.train.get_global_step()
-    #             self.global_epoch = 0
-    #             self.increase_global_step = tf.assign_add(self.global_step, 1)
-    #             self.fetch_dict[tf.estimator.ModeKeys.EVAL] = self.make_fetch_dict(tf.estimator.ModeKeys.EVAL)
-
-    #         self.fetch_dict[mode] = self.make_fetch_dict(mode)
-    #     self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=self.config.max_to_keep)
-    #     logger.info('Start session ...')
-    #     self.sess = tf.Session()
-    #     self.sess.run(tf.global_variables_initializer())
-    #     self.sess.run(tf.local_variables_initializer())
-    #     self._restore_checkpoint(use_best=use_best)
-
     def add_estimator_inputs(self, mode):
         if hasattr(self.config, 'dropout_keep_prob') and mode != 'EXPORT':
             self.model_inputs['dropout_keep_prob'] = tf.placeholder(tf.float32, name="dropout_keep_prob")
@@ -405,18 +381,21 @@ class PythonEstimator(object):
                 results.append(single_result)
 
         word2id = {i : line.strip() for i, line in enumerate(open(self.config.word2id, 'r'))}
+        pos2id = {i : line.strip() for i, line in enumerate(open(self.config.pos2id, 'r'))}
 
         with open(self.config.infer_op_path, 'w') as fout:
             for res in results:
-                if res['tokens'] is None:
+                if res['word'] is None:
                     break
+                idx = res['idx']
                 word = map(lambda x: word2id.get(x, '<UNK>'), res['word'])
+                upos = map(lambda x: pos2id.get(x, '<UNK>'), res['upos'])
+                xpos = map(lambda x: pos2id.get(x, '<UNK>'), res['xpos'])
                 pred = res['pred']
                 for i in range(len(word)):
                     if res['word'][i] == 0:
                         break
-                    fout.write(word[i]+' ')
-                    fout.write(str(pred[i])+' \n')
+                    fout.write('\t'.join([idx[i],'_',word[i],upos[i],xpos[i],'_',str(pred[i]),'_','_','_'])+'\n')
                 fout.write('\n')
 
     # def export_model(self):
