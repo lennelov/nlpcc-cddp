@@ -129,6 +129,7 @@ estimator:
         # - *train_dataset
         - *dev_dataset
         # - *test_dataset
+    eval_to_file: True
     eval_op_path: results/dependency_parsing/summary/eval.output
     # infer_dataset: *predict_dataset
     # infer_op_path: results/dependency_parsing/summary/infer.output
