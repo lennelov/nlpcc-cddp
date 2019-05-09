@@ -142,6 +142,7 @@ estimator:
     use_entity_f1: False
     eval_with_input: False
     word2id: data/word2id.table # word2id.random.table if random embedding
+    pos2id: data/pos2id.table
     checkpoint_dir: results/checkpoint
 
     model_name: dependency_parsing_model
