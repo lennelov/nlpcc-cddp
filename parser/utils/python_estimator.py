@@ -231,6 +231,7 @@ class PythonEstimator(object):
             self.reset_metric()
             fetch_result = None
             step = 0
+            results = []
             for batch in self.datasets[dataset_config.name].make_iter(self.config.batch_size):
                 fetch_result = self.feedforward(
                     batch=batch,
@@ -238,6 +239,8 @@ class PythonEstimator(object):
                     name=dataset_config.name,
                 )
                 step += 1
+                for single_result in self.iter_fetch_data(fetch_result['predictions']):
+                    results.append(single_result)
 
             self.update_fetch_result(dataset_config.name, fetch_result)
             score = fetch_result['uas']
@@ -249,6 +252,25 @@ class PythonEstimator(object):
                 fetch_result=fetch_result,
             )
             watch_start = time.time()
+
+            if hasattr(self.config, 'eval_to_file') and self.config.eval_to_file:
+                word2id = {i : line.strip() for i, line in enumerate(open(self.config.word2id, 'r'))}
+                pos2id = {i : line.strip() for i, line in enumerate(open(self.config.pos2id, 'r'))}
+
+                with open(self.config.eval_op_path+'.'+dataset_config.name, 'w') as fout:
+                    for res in results:
+                        if res['word'] is None:
+                            break
+                        idx = res['idx']
+                        word = map(lambda x: word2id.get(x, '<UNK>'), res['word'])
+                        upos = map(lambda x: pos2id.get(x, '<UNK>'), res['upos'])
+                        xpos = map(lambda x: pos2id.get(x, '<UNK>'), res['xpos'])
+                        pred = res['pred']
+                        for i in range(len(word)):
+                            if res['word'][i] == 0:
+                                break
+                            fout.write('\t'.join([idx[i],'_',word[i],upos[i],xpos[i],'_',str(pred[i]),'_','_','_'])+'\n')
+                        fout.write('\n')
 
         if is_in_train:
             self.reset_metric()
