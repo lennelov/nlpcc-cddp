@@ -11,3 +11,4 @@ self-attentive-parser/
 *.data-00000-of-00001
 parser/results/dependency_parsing/checkpoint/checkpoint
 parser/results/dependency_parsing/checkpoint/best/checkpoint
+cs224n-assignment/
