@@ -1,0 +1,1 @@
+Embedding data are downloaded from http://hlt.suda.edu.cn/index.php/Nlpcc-2019-shared-task

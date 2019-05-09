@@ -96,7 +96,7 @@ predict_dataset: &predict_dataset
     << : *pred_dataset
 
 # logging:
-#     file: results/logging.out
+#     file: results/dependency_parsing/logging.out
 #     level: 3
 
 # Model config
@@ -129,9 +129,9 @@ estimator:
         # - *train_dataset
         - *dev_dataset
         # - *test_dataset
-    eval_op_path: results/summary/eval.output
+    eval_op_path: results/dependency_parsing/summary/eval.output
     # infer_dataset: *predict_dataset
-    # infer_op_path: results/summary/infer.output
+    # infer_op_path: results/dependency_parsing/summary/infer.output
 
     batch_size: 200
     max_epochs: 40
