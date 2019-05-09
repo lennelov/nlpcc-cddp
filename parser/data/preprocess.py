@@ -16,7 +16,7 @@ for dataset in data_dir:
                 word.add(line[1])
 fout = open('pos2id.table', 'w')
 pos = list(pos)
-for idx, item in enumerate(pos):
+for item in pos:
     fout.write(item+'\n')
 fout.close()
 
@@ -37,6 +37,22 @@ with open(emb_dir, encoding='utf-8') as fin:
                 fout1.write(' '.join(line[1:])+'\n')
 fout.close()
 fout1.close()
+
+fout = open('./word2id.random.table', 'bw')
+word = set()
+for dataset in data_dir:
+    if dataset.startswith('./train'):
+        with open(dataset, encoding='utf-8') as fin:
+            for line in fin:
+                line = line.strip()
+                if line != '':
+                    line = line.split('\t')
+                    word.add(line[1])
+word = list(word)
+for item in word:
+    fout.write((item+'\n').encode('utf-8'))
+fout.close()
+
 
 # Transform to the form framework supports
 for dataset in data_dir:
