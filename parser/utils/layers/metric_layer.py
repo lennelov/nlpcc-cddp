@@ -6,7 +6,6 @@ import numpy as np
 import tensorflow as tf
 from .layer import Layer
 from utils.tools.tf_metrics import recall, precision, f1
-from utils.tools.conlleval import entity_f1
 
 
 class DefaultClassificationMetricLayer(Layer):
