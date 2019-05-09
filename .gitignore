@@ -4,3 +4,10 @@
 Parser-v2/
 Parser-v3/
 self-attentive-parser/
+*.comput1
+*.index
+*.eval0
+*.meta
+*.data-00000-of-00001
+parser/results/dependency_parsing/checkpoint/checkpoint
+parser/results/dependency_parsing/checkpoint/best/checkpoint
