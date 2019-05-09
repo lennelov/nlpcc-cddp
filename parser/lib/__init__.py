@@ -5,6 +5,8 @@ import os
 import logging
 import logging.config
 
+from python_dataset import PythonDataset
+
 
 initialized = False
 def initialize_logging(out, level='DEBUG'):
@@ -32,6 +34,10 @@ def initialize_logging(out, level='DEBUG'):
         }
     })
     initialized = True
+
+def get_dataset(config):
+    return PythonDataset(config)
+
 
 
 def main():

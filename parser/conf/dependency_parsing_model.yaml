@@ -123,7 +123,7 @@ model:
 
 # Estimator
 estimator:
-    type: PythonSequenceLabellingEstimator
+    type: PythonEstimator
     train_dataset: *train_dataset
     eval_datasets:
         # - *train_dataset
@@ -139,14 +139,16 @@ estimator:
     use_crf: False
     chunking: False
     use_entity_f1: False
+    eval_with_input: False
     word2id: data/word2id.table
 #    label2id: data/label2id.table
 #    infer2id: data/infer2id.table
     checkpoint_dir: results/checkpoint
-    best_checkpoint_dir: results/best
+
     model_name: dependency_parsing_model
-    save_checkpoints_steps: 2000
-    eval_interval_steps: 100
-    max_training_steps: 4000
-    log_every_n_steps: 100
-    display_eval: False
+    # save_checkpoints_steps: 2000
+    eval_interval_epochs: 100
+    max_training_steps: 400000
+    log_every_n_steps: 1
+    tolerance: 5
+    skip_eval_save: False

@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import tensorflow as tf
 from tensorflow.python import debug as tf_debug
-from lib import datasets
+from lib import get_dataset
 import traceback
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ class PythonEstimator(object):
         self.model_inputs = {}
         for i, dataset_config in enumerate(self.dataset_configs):
             logger.info('Building ' + dataset_config.name + '...')
-            self.datasets[dataset_config.name] = datasets.get_dataset(dataset_config)
+            self.datasets[dataset_config.name] = get_dataset(dataset_config)
             self.datasets[dataset_config.name].build(self.model_inputs)
             self.model_inputs.update(self.datasets[dataset_config.name].inputs)
             self.writers[dataset_config.name] = tf.summary.FileWriter(
@@ -84,16 +84,12 @@ class PythonEstimator(object):
             )
         # self.eval_datasets = [self.datasets[x] for x in self.eval_datasets]
 
-        if hasattr(conf, 'save_best_result'):
-            self.set_save_best_result()
+        self.config.best_checkpoint_dir = self.config.checkpoint_dir + '/best'
 
     def set_eval_and_summary(self):
         self.eval_and_summary = []
         for key, value in self.estimator_spec.eval_metric_ops.items():
             self.eval_and_summary.append(key)
-
-    def set_save_best_result(self):
-        self.save_best = ['accuracy']
 
     def make_fetch_dict(self, mode):
         fetch_dict = {}
@@ -107,82 +103,27 @@ class PythonEstimator(object):
             fetch_dict['predictions'] = self.estimator_spec.predictions
             if mode == tf.estimator.ModeKeys.TRAIN:
                 fetch_dict['train_op'] = self.estimator_spec.train_op
-                fetch_dict['global_step'] = self.increase_global_step
+                fetch_dict['global_step'] = self.global_step
                 fetch_dict['loss'] = self.estimator_spec.loss
         return fetch_dict
 
-    def build_save_best_result_graph(self):
-        self.best_result = {}
-        self.best_result_step = {}
-        self.no_update_times = 0
-        for dataset_config in self.eval_configs:
-            self.best_result[dataset_config.name] = {}
-            self.best_result_step[dataset_config.name] = {}
-            for k in self.save_best:
-                name_step = "best_step_" + k + "_in_" + dataset_config.name
-                name_result = "best_" + k + "_in_" + dataset_config.name
-                self.best_result[dataset_config.name][name_result] = \
-                    tf.get_variable(
-                        name=name_result,
-                        shape=[],
-                        initializer=tf.constant_initializer(0.0),
-                        trainable=False)
-                self.best_result_step[dataset_config.name][name_step] = \
-                    tf.get_variable(
-                        name=name_step,
-                        shape=[],
-                        initializer=tf.constant_initializer(0),
-                        trainable=False)
-
-        self.best_saver = tf.train.Saver(tf.global_variables())
-
-    def update_best_result(self, name, fetch_result):
-        update_flag = False
-        for k in self.save_best:
-            name_step = "best_step_" + k + "_in_" + name
-            name_result = "best_" + k + "_in_" + name
-            name_step_update = k + '_best_step_update_op_in_' + name
-            name_result_update = k + 'best_result_update_op_in_' + name
-            if fetch_result[k] > fetch_result[name_result]:
-                update_best_result_op = {
-                    name_step_update: tf.assign(self.best_result_step[name][name_step], self.global_step),
-                    name_result_update: tf.assign(self.best_result[name][name_result], fetch_result[k]),
-                }
-                tmp_output = self.sess.run(update_best_result_op)
-                update_flag = True
-                self.best_saver.save(self.sess, os.path.join(self.config.checkpoint_dir, 'best_' + k + '_in_' + name))
-
-                log_string = 'update and save best [' + str(k) + ': ' + str(tmp_output[name_result_update]) + '] in [' + \
-                             str(tmp_output[name_step_update]) + ' steps]'
-                logger.info(log_string)
-        if update_flag:
-            self.no_update_times = 0
-        else:
-            self.no_update_times += 1
-        return update_flag
-
-    def build_graph(self, mode):
+    def build_graph(self, mode, use_best=False):
         self.action_mode = mode
         self.fetch_dict = {}
         self.add_estimator_inputs(mode)
-        if mode == 'EXPORT':
-            self.estimator_spec = self.model.model_fn(self.model_inputs, mode=tf.estimator.ModeKeys.PREDICT)
-            self.fetch_dict[mode] = self.make_fetch_dict(mode)
-        else:
-            self.estimator_spec = self.model.model_fn(self.model_inputs, mode=mode)
-            self.set_eval_and_summary()
-            if mode == tf.estimator.ModeKeys.TRAIN:
-                self.global_step = tf.train.get_global_step()
-                if not self.global_step:
-                    self.global_step = tf.get_variable(name="global_step", initializer=0, trainable=False)
+        # if mode == 'EXPORT':
+        #     self.estimator_spec = self.model.model_fn(self.model_inputs, mode=tf.estimator.ModeKeys.PREDICT)
+        #     self.fetch_dict[mode] = self.make_fetch_dict(mode)
+        # else:
+        self.estimator_spec = self.model.model_fn(self.model_inputs, mode=mode)
+        self.set_eval_and_summary()
+        if mode == tf.estimator.ModeKeys.TRAIN:
+            self.global_step = tf.train.get_global_step()
 
-                self.global_epoch = 0
-                self.increase_global_step = tf.assign_add(self.global_step, 1)
-                if hasattr(self.config, 'save_best_result'):
-                    self.build_save_best_result_graph()
-                self.fetch_dict[tf.estimator.ModeKeys.EVAL] = self.make_fetch_dict(tf.estimator.ModeKeys.EVAL)
+            self.global_epoch = 0
+            self.fetch_dict[tf.estimator.ModeKeys.EVAL] = self.make_fetch_dict(tf.estimator.ModeKeys.EVAL)
+        self.fetch_dict[mode] = self.make_fetch_dict(mode)
 
-            self.fetch_dict[mode] = self.make_fetch_dict(mode)
         self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=self.config.max_to_keep)
         logger.info('Start session ...')
 
@@ -206,7 +147,31 @@ class PythonEstimator(object):
         self.sess.run(tf.local_variables_initializer())
         writer = tf.summary.FileWriter(self.summaries_dir, self.sess.graph)
         writer.close()
-        self._restore_checkpoint()
+        self._restore_checkpoint(use_best=use_best)
+
+    # def build_graph(self, mode, use_best=False):
+    #     self.action_mode = mode
+    #     self.fetch_dict = {}
+    #     self.add_estimator_inputs(mode)
+    #     if mode == 'EXPORT':
+    #         self.estimator_spec = self.model.model_fn(self.model_inputs, mode=tf.estimator.ModeKeys.PREDICT)
+    #         self.fetch_dict[mode] = self.make_fetch_dict(mode)
+    #     else:
+    #         self.estimator_spec = self.model.model_fn(self.model_inputs, mode=mode)
+    #         self.set_eval_and_summary()
+    #         if mode == tf.estimator.ModeKeys.TRAIN:
+    #             self.global_step = tf.train.get_global_step()
+    #             self.global_epoch = 0
+    #             self.increase_global_step = tf.assign_add(self.global_step, 1)
+    #             self.fetch_dict[tf.estimator.ModeKeys.EVAL] = self.make_fetch_dict(tf.estimator.ModeKeys.EVAL)
+
+    #         self.fetch_dict[mode] = self.make_fetch_dict(mode)
+    #     self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=self.config.max_to_keep)
+    #     logger.info('Start session ...')
+    #     self.sess = tf.Session()
+    #     self.sess.run(tf.global_variables_initializer())
+    #     self.sess.run(tf.local_variables_initializer())
+    #     self._restore_checkpoint(use_best=use_best)
 
     def add_estimator_inputs(self, mode):
         if hasattr(self.config, 'dropout_keep_prob') and mode != 'EXPORT':
@@ -226,14 +191,6 @@ class PythonEstimator(object):
         self.update_estimator_feed_dict(batch, mode)
         fetch_dict = {}
         fetch_dict.update(self.fetch_dict[mode])
-
-        # update best result and step:
-        if hasattr(self, 'best_result_step') and name in self.best_result_step:
-            fetch_dict.update(self.best_result_step[name])
-        if hasattr(self, 'best_result') and name in self.best_result:
-            fetch_dict.update(self.best_result[name])
-
-        # go go go
 
         try:
             fetch_result = self.sess.run(fetch_dict, feed_dict=batch)
@@ -256,7 +213,6 @@ class PythonEstimator(object):
                 k = k.replace(':0', '')
                 k = k.replace('_placeholder', '')
                 fetch_result['predictions'][k] = v
-
         return fetch_result
 
     def log_result(self, name, speed, step, fetch_result):
@@ -290,38 +246,25 @@ class PythonEstimator(object):
 
     def eval(self, is_in_train=False):
         if not is_in_train:
-            self.build_graph(mode=tf.estimator.ModeKeys.EVAL)
+            self.build_graph(mode=tf.estimator.ModeKeys.EVAL, use_best=True)
 
         logger.info('Start evaling ...')
+        score = 0
         watch_start = time.time()
         for dataset_config in self.eval_configs:
             self.reset_metric()
             fetch_result = None
             step = 0
-            if hasattr(self.config, 'eval_with_input'):
-                results = []
-                for batch in self.datasets[dataset_config.name].make_iter(self.config.batch_size):
-                    fetch_result = self.feedforward(
-                        batch=batch,
-                        mode=tf.estimator.ModeKeys.EVAL,
-                        name=dataset_config.name,
-                        with_input=True,
-                    )
-                    step += 1
-                    for single_result in self.iter_fetch_data(fetch_result['predictions']):
-                        results.append(single_result)
+            for batch in self.datasets[dataset_config.name].make_iter(self.config.batch_size):
+                fetch_result = self.feedforward(
+                    batch=batch,
+                    mode=tf.estimator.ModeKeys.EVAL,
+                    name=dataset_config.name,
+                )
+                step += 1
 
-                self.update_fetch_result(dataset_config.name, fetch_result, results)
-            else:
-                for batch in self.datasets[dataset_config.name].make_iter(self.config.batch_size):
-                    fetch_result = self.feedforward(
-                        batch=batch,
-                        mode=tf.estimator.ModeKeys.EVAL,
-                        name=dataset_config.name,
-                    )
-                    step += 1
-
-                self.update_fetch_result(dataset_config.name, fetch_result)
+            self.update_fetch_result(dataset_config.name, fetch_result)
+            score = fetch_result['uas']
 
             self.log_result(
                 name=dataset_config.name,
@@ -331,9 +274,6 @@ class PythonEstimator(object):
             )
             watch_start = time.time()
 
-            if is_in_train and hasattr(self.config, 'save_best_result'):
-                self.update_best_result(dataset_config.name, fetch_result)
-
         if is_in_train:
             self.reset_metric()
 
@@ -341,6 +281,7 @@ class PythonEstimator(object):
             if hasattr(self.config, 'skip_eval_save') and self.config.skip_eval_save:
                 return
             self._save_checkpoint()
+        return score
 
     def do_something_when_epoch_over(self, epoch_time=None):
         pass
@@ -350,6 +291,9 @@ class PythonEstimator(object):
         logger.info('Start training ...')
         watch_start = start_time = time.time()
         training_finished = False
+        count = 0   # Early stopping
+        max_step = 0
+        max_score = 0
         while True:
             epoch_start_time = time.time()
 
@@ -375,17 +319,49 @@ class PythonEstimator(object):
 
                 if hasattr(self.config, 'eval_interval_steps') and \
                         self.global_step % self.config.eval_interval_steps == 0:
-                    self.eval(is_in_train=True)
+                    score = self.eval(is_in_train=True)
+                    print score, count, self.config.tolerance, count >= self.config.tolerance
+                    if score < max_score:
+                        count += 1
+                    else:
+                        count = 0
+                        max_score = score
+                        max_step = self.global_step
+                        self._save_checkpoint(use_best=True)
+                    if count >= self.config.tolerance:
+                        training_finished = True
+                        break
 
                 if hasattr(self.config, 'max_training_steps') and \
                         self.global_step > self.config.max_training_steps:
-                    self.eval(is_in_train=True)
+                    score = self.eval(is_in_train=True)
+                    if score > max_score:
+                        self._save_checkpoint(use_best=True)
+                        max_score = score
+                        max_step = global_step
+
                     training_finished = True
                     break
 
                 # when the eval results does not have any improvement after "auto_end_time" times, end the train
                 if hasattr(self.config, 'auto_end_time') and \
                         self.no_update_times >= self.config.auto_end_time:
+                    training_finished = True
+                    break
+
+            if hasattr(self.config, 'save_checkpoints_epochs'):
+                self._save_checkpoint()
+
+            if hasattr(self.config, 'eval_interval_epochs'):
+                score = self.eval(is_in_train=True)
+                print score, count, self.config.tolerance, count >= self.config.tolerance
+                if score < max_score:
+                    count += 1
+                else:
+                    count = 0
+                    max_score = score
+                    self._save_checkpoint(use_best=True)
+                if count >= self.config.tolerance:
                     training_finished = True
                     break
 
@@ -415,8 +391,9 @@ class PythonEstimator(object):
             yield data_point
 
     def infer(self, infer_dataset=None):
-        self.build_graph(mode=tf.estimator.ModeKeys.PREDICT)
+        self.build_graph(mode=tf.estimator.ModeKeys.PREDICT, use_best=True)
         logger.info('Start infering ...')
+        results = []
         for batch in self.datasets[self.infer_name].make_iter(self.config.batch_size):
             fetch_result = self.feedforward(
                 batch=batch,
@@ -425,36 +402,53 @@ class PythonEstimator(object):
                 with_input=True,
             )
             for single_result in self.iter_fetch_data(fetch_result['predictions']):
-                yield single_result
+                results.append(single_result)
 
-    def export_model(self):
-        self.build_graph(mode='EXPORT')
+        word2id = {i : line.strip() for i, line in enumerate(open(self.config.word2id, 'r'))}
 
-        export_dir = os.path.join(self.config.checkpoint_dir, 'saved_model')
-        outputs = self.estimator_spec.predictions
+        with open(self.config.infer_op_path, 'w') as fout:
+            for res in results:
+                if res['tokens'] is None:
+                    break
+                word = map(lambda x: word2id.get(x, '<UNK>'), res['word'])
+                pred = res['pred']
+                for i in range(len(word)):
+                    if res['word'][i] == 0:
+                        break
+                    fout.write(word[i]+' ')
+                    fout.write(str(pred[i])+' \n')
+                fout.write('\n')
 
-        for k, v in self.model_inputs.items():
-            logger.info('inputs: [key: %s], [value: %s]', k, v)
-        for k, v in outputs.items():
-            logger.info('outputs: [key: %s], [value: %s]', k, v)
+    # def export_model(self):
+    #     self.build_graph(mode='EXPORT')
 
-        tf.saved_model.simple_save(self.sess, export_dir, inputs=self.model_inputs, outputs=outputs)
+    #     export_dir = os.path.join(self.config.checkpoint_dir, 'saved_model')
+    #     outputs = self.estimator_spec.predictions
 
-    # restore checkpoint in self.config.infer_checkpoint or latest checkpoint
-    def _restore_checkpoint(self):
-        if hasattr(self.config, 'restore_checkpoint'):
-            checkpoint_file = self.config.restore_checkpoint
-        else:
+    #     for k, v in self.model_inputs.items():
+    #         logger.info('inputs: [key: %s], [value: %s]', k, v)
+    #     for k, v in outputs.items():
+    #         logger.info('outputs: [key: %s], [value: %s]', k, v)
+
+    #     tf.saved_model.simple_save(self.sess, export_dir, inputs=self.model_inputs, outputs=outputs)
+
+    def _restore_checkpoint(self, use_best=False):
+        if not use_best:
             checkpoint_dir = self.config.checkpoint_dir
-            checkpoint_file = tf.train.latest_checkpoint(checkpoint_dir)
+        else:
+            checkpoint_dir = self.config.best_checkpoint_dir
+        checkpoint_file = tf.train.latest_checkpoint(checkpoint_dir)
         if checkpoint_file:
             logger.info('Restoring from checkpoint file %s' % checkpoint_file)
             self.saver.restore(self.sess, checkpoint_file)
         else:
             logger.info('Can not find any checkpoint file, start from zero!')
 
-    def _save_checkpoint(self, name=None):
-        checkpoint_dir = self.config.checkpoint_dir
+    def _save_checkpoint(self, name=None, use_best=False):
+        if not use_best:
+            checkpoint_dir = self.config.checkpoint_dir
+        else:
+            checkpoint_dir = self.config.best_checkpoint_dir
         logger.info('Saving to checkpoint file %s-%d' % (checkpoint_dir, self.global_step))
         if not name:
             self.saver.save(self.sess, os.path.join(checkpoint_dir, 'model.cpkt'), global_step=self.global_step)

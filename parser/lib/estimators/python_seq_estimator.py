@@ -25,32 +25,6 @@ class PythonSequenceLabellingEstimator(PythonEstimator):
         super(PythonSequenceLabellingEstimator, self).__init__(conf, model)
         self.config.best_checkpoint_dir = self.config.checkpoint_dir + '/best'
 
-    def build_graph(self, mode, use_best=False):
-        self.action_mode = mode
-        self.fetch_dict = {}
-        self.add_estimator_inputs(mode)
-        if mode == 'EXPORT':
-            self.estimator_spec = self.model.model_fn(self.model_inputs, mode=tf.estimator.ModeKeys.PREDICT)
-            self.fetch_dict[mode] = self.make_fetch_dict(mode)
-        else:
-            self.estimator_spec = self.model.model_fn(self.model_inputs, mode=mode)
-            self.set_eval_and_summary()
-            if mode == tf.estimator.ModeKeys.TRAIN:
-                self.global_step = tf.train.get_global_step()
-                self.global_epoch = 0
-                self.increase_global_step = tf.assign_add(self.global_step, 1)
-                if hasattr(self.config, 'save_best_result'):
-                    self.build_save_best_result_graph()
-                self.fetch_dict[tf.estimator.ModeKeys.EVAL] = self.make_fetch_dict(tf.estimator.ModeKeys.EVAL)
-
-            self.fetch_dict[mode] = self.make_fetch_dict(mode)
-        self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=self.config.max_to_keep)
-        logger.info('Start session ...')
-        self.sess = tf.Session()
-        self.sess.run(tf.global_variables_initializer())
-        self.sess.run(tf.local_variables_initializer())
-        self._restore_checkpoint(use_best=use_best)
-
     def train(self):
         self.build_graph(mode=tf.estimator.ModeKeys.TRAIN)
         logger.info('Start training ...')

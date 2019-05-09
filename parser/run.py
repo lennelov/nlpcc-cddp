@@ -68,8 +68,8 @@ def main():
     est = get_estimator(conf.estimator, model)
 
     # Execute actions
-    if args.action == 'export':
-        est.export_model()
+    # if args.action == 'export':
+    #     est.export_model()
 
     if args.action == 'train':
         est.train()
