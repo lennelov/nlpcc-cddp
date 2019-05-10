@@ -105,7 +105,8 @@ model:
     use_word_pretrain_emb: False
     word_emb_finetune: False
     word2vec_dict: 'data/embedding/emb.50' 
-    vocab_size: 12445 # 8679 if random embedding
+    vocab_size: 12446 # 8679 if random embedding
+    pos_size: 43
 
     use_crf: False
     max_length: 200
@@ -119,6 +120,7 @@ model:
     dropout_rate: 0.3
     n_classes: 200
     hidden_size: 128
+    fc_hidden_size: 256
     metric: NERMetric
 
 # Estimator

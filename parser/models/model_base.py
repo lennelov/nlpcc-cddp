@@ -33,7 +33,8 @@ class ModelBase(object):
         metrics = self.metric
 
         # Compute predictions op.
-        predicted_classes = tf.argmax(self.infer_op, -1)
+        # predicted_classes = tf.argmax(self.infer_op, -1)
+        predicted_classes = self.infer_op
         predictions = {
             'infer': self.infer_op,
             'pred': predicted_classes
