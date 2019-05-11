@@ -10,6 +10,7 @@ import numpy as np
 import utils.layers as layers
 import utils.tools.config
 import model_base
+from tensorflow.contrib import autograph
 
 sys.setrecursionlimit(10000)
 
@@ -115,7 +116,7 @@ class DependencyModel(model_base.ModelBase):
         # self.logits = seq_logits
         # self.logits_op = seq_logits
 
-
+@autograph.convert()
 def compute_score(h, nwords, gold, fc_layer_1, fc_layer_2, max_len):
 
     h = h[:nwords+1, :]
@@ -136,10 +137,12 @@ def compute_score(h, nwords, gold, fc_layer_1, fc_layer_2, max_len):
     length = nwords + 1
     matrix = tf.zeros([length, length])
     fn = lambda v: tf.squeeze(fc_layer_2(tf.tanh(fc_layer_1(tf.concat( [h, tf.transpose( tf.tile( tf.expand_dims(v, -1), [1, length] ), perm=[1,0] )], axis=-1)))), -1)
-    matrix = tf.map_fn(fn=fn, elems=h, dtype=tf.float32)
+    matrix = tf.map_fn(fn=fn, elems=h, dtype=tf.float64)
     matrix = tf.reshape(matrix, [length, length])
 
-    heads = parse_proj(matrix, length, max_len+1, gold)
+    # heads = parse_proj(matrix, length, max_len+1, gold)
+    heads = parse_proj(matrix, nwords+1, gold)
+
     heads_new = tf.concat([heads[1:], tf.zeros([max_len-nwords], dtype=tf.int32)], axis=-1)
     return heads_new
 
@@ -147,142 +150,70 @@ def compute_score(h, nwords, gold, fc_layer_1, fc_layer_2, max_len):
 # from collections import defaultdict, namedtuple
 # from operator import itemgetter
 
-
-def set_value(matrix, x, y, val):
-    # 提取出要更新的行
-    row = tf.gather(matrix, x)
-    # 构造这行的新数据
-    new_row = tf.concat([row[:y], [val], row[y+1:]], axis=0)
-    # 使用 tf.scatter_update 方法进正行替换
-    temp = matrix
-    matrix = tf.concat([temp[:x],tf.expand_dims(new_row,1),temp[x+1:]], axis=-1)
-    # matrix.assign(tf.scatter_update(matrix, x, new_row)) 
-
-def parse_proj(scores, length, max_len, gold=None):
+@autograph.convert()
+def parse_proj(scores, length, gold=None):
     '''
     Parse using Eisner's algorithm.
     '''
+    nr = length
+    nc = nr
     # nr, nc = np.shape(scores)
     # if nr != nc:
     #     raise ValueError("scores must be a squared matrix with nw+1 rows")
 
-    nr = length
-    nc = nr
-
     N = nr - 1 # Number of words (excluding root).
 
-    # # Initialize CKY table.
-    # complete = tf.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
-    # incomplete = tf.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
-    # complete_backtrack = -tf.ones([N+1, N+1, 2], dtype=tf.int32) # s, t, direction (right=1). 
-    # incomplete_backtrack = -tf.ones([N+1, N+1, 2], dtype=tf.int32) # s, t, direction (right=1).
     # Initialize CKY table.
-    complete = tf.zeros([length, length, 2]) # s, t, direction (right=1). 
-    incomplete = tf.zeros([length, length, 2]) # s, t, direction (right=1). 
-    complete_backtrack = -tf.ones([length, length, 2], dtype=tf.int32) # s, t, direction (right=1). 
-    incomplete_backtrack = -tf.ones([length, length, 2], dtype=tf.int32) # s, t, direction (right=1).
+    # complete = np.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
+    # incomplete = np.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
+    # complete_backtrack = -np.ones([N+1, N+1, 2], dtype=int) # s, t, direction (right=1). 
+    # incomplete_backtrack = -np.ones([N+1, N+1, 2], dtype=int) # s, t, direction (right=1)
+    complete = np.zeros([241, 241, 2]) # s, t, direction (right=1). 
+    incomplete = np.zeros([241, 241, 2]) # s, t, direction (right=1). 
+    complete_backtrack = -np.ones([241, 241, 2], dtype=int) # s, t, direction (right=1). 
+    incomplete_backtrack = -np.ones([241, 241, 2], dtype=int) # s, t, direction (right=1).
 
-    # incomplete[0, :, 0] -= np.inf
-    temp0 = incomplete[:,:,0]
-    temp1 = incomplete[:,:,1]
-    temp00 = tf.constant(-np.inf, shape=[1,max_len])
-    temp01 = temp0[1:length,:]
-    temp = tf.concat([temp00[:,:length], temp01], 0)
-    incomplete = tf.concat([tf.expand_dims(temp, 2), tf.expand_dims(temp1, 2)], 2)
+    incomplete[0, :, 0] -= np.inf
 
     # Loop from smaller items to larger items.
-    k = tf.constant(1)
-    s = tf.constant(0)
-    tf.while_loop(lambda s,k: cond(s,k,N), lambda s,k: body(s,k,complete,incomplete,complete_backtrack,incomplete_backtrack,scores,gold), [s,k])
+    for k in range(1,N+1):
+        for s in range(N-k+1):
+            t = s+k
+            
+            # First, create incomplete items.
+            # left tree
+            incomplete_vals0 = complete[s, s:t, 1] + complete[(s+1):(t+1), t, 0] + scores[t, s] + tf.cast((0.0 if gold is not None and gold[s]==t else 1.0),dtype=tf.float64)
+            incomplete[s, t, 0] = np.max(incomplete_vals0)
 
+            incomplete_backtrack[s, t, 0] = s + np.argmax(incomplete_vals0)
+            # right tree
+            incomplete_vals1 = complete[s, s:t, 1] + complete[(s+1):(t+1), t, 0] + scores[s, t] + tf.cast((0.0 if gold is not None and gold[t]==s else 1.0),dtype=tf.float64)
+            incomplete[s, t, 1] = np.max(incomplete_vals1)
+            incomplete_backtrack[s, t, 1] = s + np.argmax(incomplete_vals1)
+
+            # Second, create complete items.
+            # left tree
+            complete_vals0 = complete[s, s:t, 0] + incomplete[s:t, t, 0]
+            complete[s, t, 0] = np.max(complete_vals0)
+            complete_backtrack[s, t, 0] = s + np.argmax(complete_vals0)
+            # right tree
+            complete_vals1 = incomplete[s, (s+1):(t+1), 1] + complete[(s+1):(t+1), t, 1]
+            complete[s, t, 1] = np.max(complete_vals1)
+            complete_backtrack[s, t, 1] = s + 1 + np.argmax(complete_vals1)
+        
     value = complete[0][N][1]
-    # heads = [-1 for _ in range(N+1)] #-np.ones(N+1, dtype=int)
-    heads = -tf.ones([N+1], dtype=tf.int32)
+    heads = [-1 for _ in range(N+1)] #-np.ones(N+1, dtype=int)
+    backtrack_eisner(incomplete_backtrack, complete_backtrack, 0, N, 1, 1, heads)
 
-    heads = backtrack_eisner(incomplete_backtrack, complete_backtrack, 0, N, 1, 1, heads, max_len, True)
+    value_proj = 0.0
+    for m in xrange(1,N+1):
+        h = heads[m]
+        value_proj += scores[h,m]
 
-    value_proj = tf.constant(0.0)
-    m = tf.constant(1)
-    tf.while_loop(lambda m: cond2(m,N), lambda m: body2(m,heads,value_proj,scores), [m])        
     return heads
 
-def cond(s,k,N):
-    return tf.cond(s+k < N+1, lambda:True, lambda:False)
-
-def cond2(m, N):
-    return tf.cond(m < N+1, lambda:True, lambda:False)
-
-def body(s,k,complete,incomplete,complete_backtrack,incomplete_backtrack,scores,gold):
-    t = s + k
-    # First, create incomplete items.
-    # left tree
-    if gold is not None:
-        incomplete_vals0 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[t, s], tf.cond( tf.equal(gold[s], t), lambda :0.0, lambda : 1.0))))
-    else:
-        incomplete_vals0 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[t, s], 1.0)))
-    temp0 = incomplete[:,:,0]
-    temp1 = incomplete[:,:,1]
-    set_value(temp0, s, t, tf.reduce_max(incomplete_vals0))
-    incomplete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
-    # incomplete[s, t, 0] = tf.reduce_max(incomplete_vals0)
-
-    temp0 = incomplete_backtrack[:,:,0]
-    temp1 = incomplete_backtrack[:,:,1]
-    set_value(temp0, s, t,  s + tf.cast(tf.argmax(incomplete_vals0), dtype=tf.int32))
-    incomplete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
-    # incomplete_backtrack[s, t, 0] = s + tf.argmax(incomplete_vals0, dtype=tf.int32)
-    # right tree
-    if gold is not None:
-        incomplete_vals1 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[s, t], tf.cond( tf.equal(gold[t], s), lambda :0.0, lambda : 1.0))))
-    else:
-        incomplete_vals1 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[s, t], 1.0)))
-    temp0 = incomplete[:,:,0]
-    temp1 = incomplete[:,:,1]
-    set_value(temp1, s, t,  tf.reduce_max(incomplete_vals1))
-    incomplete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
-    # incomplete[s, t, 1] = tf.reduce_max(incomplete_vals1)
-
-    temp0 = incomplete_backtrack[:,:,0]
-    temp1 = incomplete_backtrack[:,:,1]
-    set_value(temp1, s, t,  s + tf.cast(tf.argmax(incomplete_vals1), dtype=tf.int32))
-    incomplete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
-    # incomplete_backtrack[s, t, 1] = s + tf.cast(tf.argmax(incomplete_vals1), dtype=tf.int32)
-
-    # Second, create complete items.
-    # left tree
-    complete_vals0 = complete[s, s:t, 0] + incomplete[s:t, t, 0]
-    temp0 = complete[:,:,0]
-    temp1 = complete[:,:,1]
-    set_value(temp0, s, t,  tf.reduce_max(complete_vals0))
-    complete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
-    # complete[s, t, 0] = tf.reduce_max(complete_vals0)
-    temp0 = complete_backtrack[:,:,0]
-    temp1 = complete_backtrack[:,:,1]
-    set_value(temp0, s, t,  s + tf.cast(tf.argmax(complete_vals0), dtype=tf.int32))
-    complete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
-    # complete_backtrack[s, t, 0] = s + tf.cast(tf.argmax(complete_vals0), dtype=tf.int32)
-    # right tree
-    complete_vals1 = incomplete[s, (s+1):(t+1), 1] + complete[(s+1):(t+1), t, 1]
-    temp0 = complete[:,:,0]
-    temp1 = complete[:,:,1]
-    set_value(temp1, s, t,  tf.reduce_max(complete_vals1))
-    complete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
-    # complete[s, t, 1] = tf.reduce_max(complete_vals1)
-    temp0 = complete_backtrack[:,:,0]
-    temp1 = complete_backtrack[:,:,1]
-    set_value(temp1, s, t,  s + 1 + tf.cast(tf.argmax(complete_vals1), dtype=tf.int32))
-    complete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
-    # complete_backtrack[s, t, 1] = s + 1 + tf.cast(tf.argmax(complete_vals1), dtype=tf.int32)
-    s += 1
-    k += 1
-    return [s,k]
-
-def body2(m,heads,value_proj,scores):
-    h = heads[m]
-    value_proj = tf.add(value_proj, scores[h,m])
-    return m
-
-def backtrack_eisner(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads, length, new_sample = False):
+@autograph.convert()
+def backtrack_eisner(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads):
     '''
     Backtracking step in Eisner's algorithm.
     - incomplete_backtrack is a (NW+1)-by-(NW+1) numpy array indexed by a start position,
@@ -298,39 +229,216 @@ def backtrack_eisner(incomplete_backtrack, complete_backtrack, s, t, direction, 
     - heads is a (NW+1)-sized numpy array of integers which is a placeholder for storing the 
     head of each word.
     '''
-    # if s == t:
-    #     return
-    if not hasattr(backtrack_eisner, 'total_num') or new_sample:
-        # backtrack_eisner.total_num = 1
-        backtrack_eisner.total_num = length
-    backtrack_eisner.total_num -= 1
-    if backtrack_eisner.total_num < 0:
-        return heads
-    heads = tf.cond(tf.equal(s, t), lambda :heads, lambda :backtrack_eisner2(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads, length))
-    return heads
-
-def backtrack_eisner2(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads, length):
+    if s == t:
+        return
     if complete:
         r = complete_backtrack[s][t][direction]
         if direction == 0:
-            heads = backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 0, 1, heads, length)
-            heads = backtrack_eisner(incomplete_backtrack, complete_backtrack, r, t, 0, 0, heads, length)
-            return heads
+            backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 0, 1, heads)
+            backtrack_eisner(incomplete_backtrack, complete_backtrack, r, t, 0, 0, heads)
+            return
         else:
-            heads = backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 0, heads, length)
-            heads = backtrack_eisner(incomplete_backtrack, complete_backtrack, r, t, 1, 1, heads, length)
-            return heads
+            backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 0, heads)
+            backtrack_eisner(incomplete_backtrack, complete_backtrack, r, t, 1, 1, heads)
+            return
     else:
         r = incomplete_backtrack[s][t][direction]
         if direction == 0:
-            # heads[s] = t
-            heads = tf.concat([heads[:s], tf.expand_dims(t, -1), heads[s+1:]], axis=-1)
-            heads = backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 1, heads, length)
-            heads = backtrack_eisner(incomplete_backtrack, complete_backtrack, r+1, t, 0, 1, heads, length)
-            return heads
+            heads[s] = t
+            backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 1, heads)
+            backtrack_eisner(incomplete_backtrack, complete_backtrack, r+1, t, 0, 1, heads)
+            return
         else:
-            # heads[t] = s
-            heads = tf.concat([heads[:t], tf.expand_dims(s, -1), heads[t+1:]], axis=-1)
-            heads = backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 1, heads, length)
-            heads = backtrack_eisner(incomplete_backtrack, complete_backtrack, r+1, t, 0, 1, heads, length)
-            return heads
+            heads[t] = s
+            backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 1, heads)
+            backtrack_eisner(incomplete_backtrack, complete_backtrack, r+1, t, 0, 1, heads)
+            return
+
+# def set_value(matrix, x, y, val):
+#     # 提取出要更新的行
+#     row = tf.gather(matrix, x)
+#     # 构造这行的新数据
+#     new_row = tf.concat([row[:y], [val], row[y+1:]], axis=0)
+#     return tf.concat([matrix[:x],tf.expand_dims(new_row,1),matrix[x+1:]], axis=-1)
+#     # 使用 tf.scatter_update 方法进正行替换
+#     # matrix.assign(tf.scatter_update(matrix, x, new_row)) 
+
+# @autograph.convert()
+# def parse_proj(scores, length, max_len, gold=None):
+#     '''
+#     Parse using Eisner's algorithm.
+#     '''
+#     # nr, nc = np.shape(scores)
+#     # if nr != nc:
+#     #     raise ValueError("scores must be a squared matrix with nw+1 rows")
+
+#     nr = length
+#     nc = nr
+
+#     N = nr - 1 # Number of words (excluding root).
+
+#     # # Initialize CKY table.
+#     # complete = tf.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
+#     # incomplete = tf.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
+#     # complete_backtrack = -tf.ones([N+1, N+1, 2], dtype=tf.int32) # s, t, direction (right=1). 
+#     # incomplete_backtrack = -tf.ones([N+1, N+1, 2], dtype=tf.int32) # s, t, direction (right=1).
+#     # Initialize CKY table.
+#     complete = tf.zeros([length, length, 2]) # s, t, direction (right=1). 
+#     incomplete = tf.zeros([length, length, 2]) # s, t, direction (right=1). 
+#     complete_backtrack = -tf.ones([length, length, 2], dtype=tf.int32) # s, t, direction (right=1). 
+#     incomplete_backtrack = -tf.ones([length, length, 2], dtype=tf.int32) # s, t, direction (right=1).
+
+#     # incomplete[0, :, 0] -= np.inf
+    # temp0 = incomplete[:,:,0]
+    # temp1 = incomplete[:,:,1]
+    # temp00 = tf.constant(-np.inf, shape=[1,max_len])
+    # temp01 = temp0[1:length,:]
+    # temp = tf.concat([temp00[:,:length], temp01], 0)
+    # incomplete = tf.concat([tf.expand_dims(temp, 2), tf.expand_dims(temp1, 2)], 2)
+
+#     # Loop from smaller items to larger items.
+#     k = tf.constant(1)
+#     s = tf.constant(0)
+#     tf.while_loop(lambda s,k: cond(s,k,N), lambda s,k: body(s,k,complete,incomplete,complete_backtrack,incomplete_backtrack,scores,gold), [s,k])
+
+#     value = complete[0][N][1]
+#     # heads = [-1 for _ in range(N+1)] #-np.ones(N+1, dtype=int)
+#     heads = -tf.ones([N+1], dtype=tf.int32)
+
+#     backtrack_eisner(incomplete_backtrack, complete_backtrack, 0, N, 1, 1, heads, max_len, True)
+
+#     value_proj = tf.constant(0.0)
+#     m = tf.constant(1)
+#     tf.while_loop(lambda m: cond2(m,N), lambda m: body2(m,heads,value_proj,scores), [m])        
+#     return heads
+
+# def cond(s,k,N):
+#     return tf.cond(s+k < N+1, lambda:True, lambda:False)
+
+# def cond2(m, N):
+#     return tf.cond(m < N+1, lambda:True, lambda:False)
+
+# @autograph.convert()
+# def body(s,k,complete,incomplete,complete_backtrack,incomplete_backtrack,scores,gold):
+#     t = s + k
+#     # First, create incomplete items.
+#     # left tree
+#     if gold is not None:
+#         incomplete_vals0 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[t, s], tf.cond( tf.equal(gold[s], t), lambda :0.0, lambda : 1.0))))
+#     else:
+#         incomplete_vals0 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[t, s], 1.0)))
+    # temp0 = incomplete[:,:,0]
+    # temp1 = incomplete[:,:,1]
+    # temp0 =set_value(temp0, s, t, tf.reduce_max(incomplete_vals0))
+    # incomplete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+#     incomplete[s, t, 0] = tf.reduce_max(incomplete_vals0)
+
+#     # temp0 = incomplete_backtrack[:,:,0]
+#     # temp1 = incomplete_backtrack[:,:,1]
+#     # temp0 = set_value(temp0, s, t,  s + tf.cast(tf.argmax(incomplete_vals0), dtype=tf.int32))
+#     # incomplete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+#     incomplete_backtrack[s, t, 0] = s + tf.argmax(incomplete_vals0, dtype=tf.int32)
+#     # right tree
+#     if gold is not None:
+#         incomplete_vals1 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[s, t], tf.cond( tf.equal(gold[t], s), lambda :0.0, lambda : 1.0))))
+#     else:
+#         incomplete_vals1 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[s, t], 1.0)))
+#     # temp0 = incomplete[:,:,0]
+#     # temp1 = incomplete[:,:,1]
+#     # temp1 = set_value(temp1, s, t,  tf.reduce_max(incomplete_vals1))
+#     # incomplete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+#     incomplete[s, t, 1] = tf.reduce_max(incomplete_vals1)
+
+#     # temp0 = incomplete_backtrack[:,:,0]
+#     # temp1 = incomplete_backtrack[:,:,1]
+#     # temp1 = set_value(temp1, s, t,  s + tf.cast(tf.argmax(incomplete_vals1), dtype=tf.int32))
+#     # incomplete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+#     incomplete_backtrack[s, t, 1] = s + tf.cast(tf.argmax(incomplete_vals1), dtype=tf.int32)
+
+#     # Second, create complete items.
+#     # left tree
+#     complete_vals0 = complete[s, s:t, 0] + incomplete[s:t, t, 0]
+#     # temp0 = complete[:,:,0]
+#     # temp1 = complete[:,:,1]
+#     # temp0 = set_value(temp0, s, t,  tf.reduce_max(complete_vals0))
+#     # complete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+#     complete[s, t, 0] = tf.reduce_max(complete_vals0)
+#     # temp0 = complete_backtrack[:,:,0]
+#     # temp1 = complete_backtrack[:,:,1]
+#     # temp0 = set_value(temp0, s, t,  s + tf.cast(tf.argmax(complete_vals0), dtype=tf.int32))
+#     # complete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+#     complete_backtrack[s, t, 0] = s + tf.cast(tf.argmax(complete_vals0), dtype=tf.int32)
+#     # right tree
+#     complete_vals1 = incomplete[s, (s+1):(t+1), 1] + complete[(s+1):(t+1), t, 1]
+#     # temp0 = complete[:,:,0]
+#     # temp1 = complete[:,:,1]
+#     # temp1 = set_value(temp1, s, t,  tf.reduce_max(complete_vals1))
+#     # complete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+#     complete[s, t, 1] = tf.reduce_max(complete_vals1)
+#     # temp0 = complete_backtrack[:,:,0]
+#     # temp1 = complete_backtrack[:,:,1]
+#     # temp1 = set_value(temp1, s, t,  s + 1 + tf.cast(tf.argmax(complete_vals1), dtype=tf.int32))
+#     # complete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+#     complete_backtrack[s, t, 1] = s + 1 + tf.cast(tf.argmax(complete_vals1), dtype=tf.int32)
+#     s += 1
+#     k += 1
+#     return [s,k]
+
+# def body2(m,heads,value_proj,scores):
+#     h = heads[m]
+#     value_proj = tf.add(value_proj, scores[h,m])
+#     return m
+
+# @autograph.convert()
+# def backtrack_eisner(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads, length, new_sample = False):
+#     '''
+#     Backtracking step in Eisner's algorithm.
+#     - incomplete_backtrack is a (NW+1)-by-(NW+1) numpy array indexed by a start position,
+#     an end position, and a direction flag (0 means left, 1 means right). This array contains
+#     the arg-maxes of each step in the Eisner algorithm when building *incomplete* spans.
+#     - complete_backtrack is a (NW+1)-by-(NW+1) numpy array indexed by a start position,
+#     an end position, and a direction flag (0 means left, 1 means right). This array contains
+#     the arg-maxes of each step in the Eisner algorithm when building *complete* spans.
+#     - s is the current start of the span
+#     - t is the current end of the span
+#     - direction is 0 (left attachment) or 1 (right attachment)
+#     - complete is 1 if the current span is complete, and 0 otherwise
+#     - heads is a (NW+1)-sized numpy array of integers which is a placeholder for storing the 
+#     head of each word.
+#     '''
+#     # if s == t:
+#     #     return
+#     if not hasattr(backtrack_eisner, 'total_num') or new_sample:
+#         backtrack_eisner.total_num = 10
+#         # backtrack_eisner.total_num = length
+#     backtrack_eisner.total_num -= 1
+#     if backtrack_eisner.total_num < 0:
+#         return
+#     tf.cond(tf.equal(s, t), lambda :0, lambda :backtrack_eisner2(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads, length))
+
+# @autograph.convert()
+# def backtrack_eisner2(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads, length):
+#     if complete:
+#         r = complete_backtrack[s][t][direction]
+#         if direction == 0:
+#             backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 0, 1, heads, length)
+#             backtrack_eisner(incomplete_backtrack, complete_backtrack, r, t, 0, 0, heads, length)
+#             return 0
+#         else:
+#             backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 0, heads, length)
+#             backtrack_eisner(incomplete_backtrack, complete_backtrack, r, t, 1, 1, heads, length)
+#             return 0
+#     else:
+#         r = incomplete_backtrack[s][t][direction]
+#         if direction == 0:
+#             heads[s] = t
+#             # heads = tf.concat([heads[:s], tf.expand_dims(t, -1), heads[s+1:]], axis=-1)
+#             backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 1, heads, length)
+#             backtrack_eisner(incomplete_backtrack, complete_backtrack, r+1, t, 0, 1, heads, length)
+#             return 0
+#         else:
+#             heads[t] = s
+#             # heads = tf.concat([heads[:t], tf.expand_dims(s, -1), heads[t+1:]], axis=-1)
+#             backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 1, heads, length)
+#             backtrack_eisner(incomplete_backtrack, complete_backtrack, r+1, t, 0, 1, heads, length)
+#             return 0
