@@ -11,6 +11,8 @@ import utils.layers as layers
 import utils.tools.config
 import model_base
 
+sys.setrecursionlimit(10000)
+
 class DependencyModel(model_base.ModelBase):
     """Dependency Model"""
     def __init__(self, config):
@@ -37,14 +39,12 @@ class DependencyModel(model_base.ModelBase):
         if mode != tf.estimator.ModeKeys.PREDICT:
             label = tf.cast(inputs['head'], tf.int32)
             label_ex = tf.concat([tf.constant(0, shape=(batch_sze, 1)), label], axis=-1)
-        # n_classes = self.config.n_classes
 
         emb = emb_layer(tokens)
         pos_emb = pos_emb_layer(pos)
         emb = tf.concat([emb, pos_emb], axis=-1)
         emb = tf.layers.dropout(emb, rate=config.dropout_rate, training=training)
 
-        # h, _ = lstm_layer(emb, x_length=nwords)
         emb = tf.transpose(emb, perm=[1, 0, 2])
         lstm_cell_fw = tf.contrib.rnn.LSTMBlockFusedCell(config.hidden_size)
         lstm_cell_bw = tf.contrib.rnn.LSTMBlockFusedCell(config.hidden_size)
@@ -56,18 +56,20 @@ class DependencyModel(model_base.ModelBase):
             output_bw, _ = lstm_cell_bw(emb, dtype=tf.float32, sequence_length=nwords+1)
             output_bw = tf.layers.dropout(output_bw, rate=config.dropout_rate, training=training)
         output = tf.concat([output_fw, output_bw], axis=-1)
-        # output = output_bw
         output = tf.transpose(output, perm=[1, 0, 2])
-        # output = tf.layers.dropout(output, rate=config.dropout_rate, training=training)
         h = tf.concat(output, axis=2)
-        weights = tf.cast(tf.not_equal(tokens[:,1:], 0), dtype=tf.float32)
 
-        score = tf.map_fn(fn=compute_matrix, elems=(h, nwords), dtype=tf.float32)
+        weights = tf.cast(tf.not_equal(tokens[:,1:], 0), dtype=tf.float32)
         metric_layer = utils.layers.UASMetricLayer()
 
+        fc_layer_1 = layers.SeqFCLayer(2*self.config.hidden_size, self.config.fc_hidden_size, name='fc_1')
+        fc_layer_2 = layers.SeqFCLayer(self.config.fc_hidden_size, 1, with_bias=False, name='fc_2')
+
         if mode != tf.estimator.ModeKeys.PREDICT:
-            pred = parse_proj(score, gold=label)
-            pred_ex = tf.concat([tf.constant(0, shape=(batch_sze, 1)), pred], axis=-1)
+            # pred = parse_proj(score, gold=label)
+            pred = tf.map_fn(fn=lambda inp: compute_score(inp[0], inp[1], inp[2], fc_layer_1, fc_layer_2, self.config.max_length), elems=(h, nwords, label), dtype=tf.int32)
+            print 'pred', pred
+            pred_ex = tf.concat([tf.zeros([batch_sze, 1], dtype=tf.int32), pred], axis=-1)
 
             tmp_gold = tf.concat([h, tf.expand_dims(tf.cast(label_ex, dtype=tf.float32),-1)], axis=-1)
             proj_h_gold = tf.map_fn(fn=lambda inp: tf.concat([inp[:,:-1],
@@ -77,8 +79,9 @@ class DependencyModel(model_base.ModelBase):
                 elems=tmp_gold,
                 dtype=tf.float32)
             proj_h_gold = tf.reshape(proj_h_gold, [-1, self.config.max_length + 1, 2*self.config.hidden_size])
-            hidden_state_gold = tf.layers.dense(proj_h_gold[:,1:,:], config.fc_hidden_size, activation='tanh')
-            score_gold = tf.layers.dense(hidden_state_gold, 1, use_bias=False)
+
+            hidden_state_gold = tf.tanh(fc_layer_1(proj_h_gold[:,1:,:]))
+            score_gold = fc_layer_2(hidden_state_gold)
             score_gold = tf.reduce_sum(tf.multiply(score_gold, weights))
 
             tmp_pred = tf.concat([h, tf.expand_dims(tf.cast(pred_ex, dtype=tf.float32),-1)], axis=-1)
@@ -89,16 +92,16 @@ class DependencyModel(model_base.ModelBase):
                 elems=tmp_pred,
                 dtype=tf.float32)
             proj_h_pred = tf.reshape(proj_h_pred, [-1, self.config.max_length + 1, 2*self.config.hidden_size])
-            hidden_state_pred = tf.layers.dense(proj_h_pred[:,1:,:], config.fc_hidden_size, activation='tanh')
-            
-            score_pred = tf.layers.dense(hidden_state_pred, 1, use_bias=False)
+
+            hidden_state_pred = tf.tanh(fc_layer_1(proj_h_pred[:,1:,:]))
+            score_pred = fc_layer_2(hidden_state_pred)
             score_pred = tf.reduce_sum(tf.multiply(score_pred, weights))
 
             self.loss_op = tf.reduce_max([tf.constant(0, dtype=tf.float32), 1- score_pred + score_gold])
 
-        pred = parse_proj(score)
-        self.metric = metric_layer(pred, label, weights=weights)
-        self.infer_op = pred
+        # pred = parse_proj(score)
+        self.infer_op = tf.map_fn(fn=lambda inp: compute_score(inp[0], inp[1], None, fc_layer_1, fc_layer_2, self.config.max_length), elems=(h, nwords), dtype=tf.int32)
+        self.metric = metric_layer(self.infer_op, label, weights=weights)
 
         # seq_logits = tf.layers.dense(h[:,1:,:], 200)
         # # seq_logits = tf.reshape(seq_logits, [-1, self.config.max_length, self.config.n_classes])
@@ -109,16 +112,34 @@ class DependencyModel(model_base.ModelBase):
         # self.logits_op = seq_logits
 
 
-def compute_matrix(h, sess):
-    length = h.get_shape().as_list()[1]
-    matrix = np.zeros([length, length])
-    for i in range(length):
-        for j in range(length):
-            matrix[i][j] = mlp_score(h[:,i], h[:,j]).eval(session=sess)
-    matrix = tf.convert_to_tensor(matrix)
-return matrix
+def compute_score(h, nwords, gold, fc_layer_1, fc_layer_2, max_len):
 
+    h = h[:nwords+1, :]
 
+    # print h.get_shape().as_list()
+    # length = h.get_shape().as_list()[0]
+    # print 'length', length
+    # matrix = tf.zeros([0,length])
+    # for i in range(length):
+    #     tmp = tf.zeros([1,0])
+    #     for j in range(length):
+    #         inp = tf.concat([h[i,:], h[j,:]], axis=-1)
+    #         score = fc_layer_2(tf.tanh(fc_layer_1(inp[:,1:,:])))
+    #         tmp = tf.concat([tmp, tf.reshape(score, [1,1])], 1)
+    #     matrix = tf.concat([matrix, tf.reshape(tmp, [1,length])], 0)
+    # print matrix
+
+    length = nwords + 1
+    matrix = tf.zeros([length, length])
+    fn = lambda v: tf.squeeze(fc_layer_2(tf.tanh(fc_layer_1(tf.concat( [h, tf.transpose( tf.tile( tf.expand_dims(v, -1), [1, length] ), perm=[1,0] )], axis=-1)))), -1)
+    print fn(h[0,:])
+    matrix = tf.map_fn(fn=fn, elems=h, dtype=tf.float32)
+    matrix = tf.reshape(matrix, [length, length])
+    print matrix
+
+    heads = parse_proj(matrix, length, gold)
+    heads_new = tf.concat([heads, tf.zeros([max_len-nwords-1], dtype=tf.int32)], axis=-1)
+    return heads_new
 
 import numpy as np
 import sys
@@ -126,60 +147,149 @@ from collections import defaultdict, namedtuple
 from operator import itemgetter
 
 
-def parse_proj(scores, gold=None):
+def set_value(matrix, x, y, val):
+    # 提取出要更新的行
+    row = tf.gather(matrix, x)
+    # 构造这行的新数据
+    new_row = tf.concat([row[:y], [val], row[y+1:]], axis=0)
+    # 使用 tf.scatter_update 方法进正行替换
+    temp = matrix
+    matrix = tf.concat([temp[:x],tf.expand_dims(new_row,1),temp[x+1:]], axis=-1)
+    # matrix.assign(tf.scatter_update(matrix, x, new_row)) 
+
+# def set_value(matrix, x, y, val):
+#     # 得到张量的宽和高，即第一维和第二维的Size
+#     w = int(matrix.get_shape()[0])
+#     h = int(matrix.get_shape()[1])
+#     # 构造一个只有目标位置有值的稀疏矩阵，其值为目标值于原始值的差
+#     val_diff = val - matrix[x][y]
+#     diff_matrix = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[x, y], values=[val_diff], dense_shape=[w, h]))
+#     # 用 Variable.assign_add 将两个矩阵相加
+#     matrix.assign_add(diff_matrix)
+
+def parse_proj(scores, length, gold=None):
     '''
     Parse using Eisner's algorithm.
     '''
-    nr, nc = np.shape(scores)
-    if nr != nc:
-        raise ValueError("scores must be a squared matrix with nw+1 rows")
+    # nr, nc = np.shape(scores)
+    # if nr != nc:
+    #     raise ValueError("scores must be a squared matrix with nw+1 rows")
+
+    nr = length
+    nc = nr
 
     N = nr - 1 # Number of words (excluding root).
 
+    # # Initialize CKY table.
+    # complete = tf.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
+    # incomplete = tf.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
+    # complete_backtrack = -tf.ones([N+1, N+1, 2], dtype=tf.int32) # s, t, direction (right=1). 
+    # incomplete_backtrack = -tf.ones([N+1, N+1, 2], dtype=tf.int32) # s, t, direction (right=1).
     # Initialize CKY table.
-    complete = np.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
-    incomplete = np.zeros([N+1, N+1, 2]) # s, t, direction (right=1). 
-    complete_backtrack = -np.ones([N+1, N+1, 2], dtype=int) # s, t, direction (right=1). 
-    incomplete_backtrack = -np.ones([N+1, N+1, 2], dtype=int) # s, t, direction (right=1).
+    complete = tf.zeros([201, 201, 2]) # s, t, direction (right=1). 
+    incomplete = tf.zeros([201, 201, 2]) # s, t, direction (right=1). 
+    complete_backtrack = -tf.ones([201, 201, 2], dtype=tf.int32) # s, t, direction (right=1). 
+    incomplete_backtrack = -tf.ones([201, 201, 2], dtype=tf.int32) # s, t, direction (right=1).
 
-    incomplete[0, :, 0] -= np.inf
+    # incomplete[0, :, 0] -= np.inf
+    temp0 = incomplete[:,:,0]
+    temp1 = incomplete[:,:,1]
+    temp00 = tf.constant(-np.inf, shape=[1,201])
+    temp01 = temp0[1:201,:]
+    temp = tf.concat([temp00, temp01], 0)
+    incomplete = tf.concat([tf.expand_dims(temp, 2), tf.expand_dims(temp1, 2)], 2)
 
     # Loop from smaller items to larger items.
-    for k in xrange(1,N+1):
-        for s in xrange(N-k+1):
-            t = s+k
-            
-            # First, create incomplete items.
-            # left tree
-            incomplete_vals0 = complete[s, s:t, 1] + complete[(s+1):(t+1), t, 0] + scores[t, s] + (0.0 if gold is not None and gold[s]==t else 1.0)
-            incomplete[s, t, 0] = np.max(incomplete_vals0)
-            incomplete_backtrack[s, t, 0] = s + np.argmax(incomplete_vals0)
-            # right tree
-            incomplete_vals1 = complete[s, s:t, 1] + complete[(s+1):(t+1), t, 0] + scores[s, t] + (0.0 if gold is not None and gold[t]==s else 1.0)
-            incomplete[s, t, 1] = np.max(incomplete_vals1)
-            incomplete_backtrack[s, t, 1] = s + np.argmax(incomplete_vals1)
+    k = tf.constant(1)
+    s = tf.constant(0)
+    tf.while_loop(lambda s,k: cond(s,k,N), lambda s,k: body(s,k,complete,incomplete,complete_backtrack,incomplete_backtrack,scores,gold), [s,k])
 
-            # Second, create complete items.
-            # left tree
-            complete_vals0 = complete[s, s:t, 0] + incomplete[s:t, t, 0]
-            complete[s, t, 0] = np.max(complete_vals0)
-            complete_backtrack[s, t, 0] = s + np.argmax(complete_vals0)
-            # right tree
-            complete_vals1 = incomplete[s, (s+1):(t+1), 1] + complete[(s+1):(t+1), t, 1]
-            complete[s, t, 1] = np.max(complete_vals1)
-            complete_backtrack[s, t, 1] = s + 1 + np.argmax(complete_vals1)
-        
     value = complete[0][N][1]
-    heads = [-1 for _ in range(N+1)] #-np.ones(N+1, dtype=int)
+    # heads = [-1 for _ in range(N+1)] #-np.ones(N+1, dtype=int)
+    heads = -tf.ones([N+1], dtype=tf.int32)
+
     backtrack_eisner(incomplete_backtrack, complete_backtrack, 0, N, 1, 1, heads)
 
-    value_proj = 0.0
-    for m in xrange(1,N+1):
-        h = heads[m]
-        value_proj += scores[h,m]
-
+    value_proj = tf.constant(0.0)
+    m = tf.constant(1)
+    tf.while_loop(lambda m: cond2(m,N), lambda m: body2(m,heads,value_proj,scores), [m])        
     return heads
 
+def cond(s,k,N):
+    return tf.cond(s+k < N+1, lambda:True, lambda:False)
+
+def cond2(m, N):
+    return tf.cond(m < N+1, lambda:True, lambda:False)
+
+def body(s,k,complete,incomplete,complete_backtrack,incomplete_backtrack,scores,gold):
+    t = s + k
+    # First, create incomplete items.
+    # left tree
+    if gold is not None:
+        incomplete_vals0 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[t, s], tf.cond( tf.equal(gold[s], t), lambda :0.0, lambda : 1.0))))
+    else:
+        incomplete_vals0 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[t, s], 1.0)))
+    temp0 = incomplete[:,:,0]
+    temp1 = incomplete[:,:,1]
+    set_value(temp0, s, t, tf.reduce_max(incomplete_vals0))
+    incomplete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+    # incomplete[s, t, 0] = tf.reduce_max(incomplete_vals0)
+
+    temp0 = incomplete_backtrack[:,:,0]
+    temp1 = incomplete_backtrack[:,:,1]
+    set_value(temp0, s, t,  s + tf.cast(tf.argmax(incomplete_vals0), dtype=tf.int32))
+    incomplete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+    # incomplete_backtrack[s, t, 0] = s + tf.argmax(incomplete_vals0, dtype=tf.int32)
+    # right tree
+    if gold is not None:
+        incomplete_vals1 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[s, t], tf.cond( tf.equal(gold[t], s), lambda :0.0, lambda : 1.0))))
+    else:
+        incomplete_vals1 = tf.add( tf.add(complete[s, s:t, 1], complete[(s+1):(t+1), t, 0]), tf.multiply(tf.ones([k]), tf.add(scores[s, t], 1.0)))
+    temp0 = incomplete[:,:,0]
+    temp1 = incomplete[:,:,1]
+    set_value(temp1, s, t,  tf.reduce_max(incomplete_vals1))
+    incomplete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+    # incomplete[s, t, 1] = tf.reduce_max(incomplete_vals1)
+
+    temp0 = incomplete_backtrack[:,:,0]
+    temp1 = incomplete_backtrack[:,:,1]
+    set_value(temp1, s, t,  s + tf.cast(tf.argmax(incomplete_vals1), dtype=tf.int32))
+    incomplete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+    # incomplete_backtrack[s, t, 1] = s + tf.cast(tf.argmax(incomplete_vals1), dtype=tf.int32)
+
+    # Second, create complete items.
+    # left tree
+    complete_vals0 = complete[s, s:t, 0] + incomplete[s:t, t, 0]
+    temp0 = complete[:,:,0]
+    temp1 = complete[:,:,1]
+    set_value(temp0, s, t,  tf.reduce_max(complete_vals0))
+    complete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+    # complete[s, t, 0] = tf.reduce_max(complete_vals0)
+    temp0 = complete_backtrack[:,:,0]
+    temp1 = complete_backtrack[:,:,1]
+    set_value(temp0, s, t,  s + tf.cast(tf.argmax(complete_vals0), dtype=tf.int32))
+    complete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+    # complete_backtrack[s, t, 0] = s + tf.cast(tf.argmax(complete_vals0), dtype=tf.int32)
+    # right tree
+    complete_vals1 = incomplete[s, (s+1):(t+1), 1] + complete[(s+1):(t+1), t, 1]
+    temp0 = complete[:,:,0]
+    temp1 = complete[:,:,1]
+    set_value(temp1, s, t,  tf.reduce_max(complete_vals1))
+    complete = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+    # complete[s, t, 1] = tf.reduce_max(complete_vals1)
+    temp0 = complete_backtrack[:,:,0]
+    temp1 = complete_backtrack[:,:,1]
+    set_value(temp1, s, t,  s + 1 + tf.cast(tf.argmax(complete_vals1), dtype=tf.int32))
+    complete_backtrack = tf.concat([tf.expand_dims(temp0, 2), tf.expand_dims(temp1, 2)], 2)
+    # complete_backtrack[s, t, 1] = s + 1 + tf.cast(tf.argmax(complete_vals1), dtype=tf.int32)
+    s += 1
+    k += 1
+    return [s,k]
+
+def body2(m,heads,value_proj,scores):
+    h = heads[m]
+    value_proj = tf.add(value_proj, scores[h,m])
+    return m
 
 def backtrack_eisner(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads):
     '''
@@ -197,8 +307,14 @@ def backtrack_eisner(incomplete_backtrack, complete_backtrack, s, t, direction, 
     - heads is a (NW+1)-sized numpy array of integers which is a placeholder for storing the 
     head of each word.
     '''
-    if s == t:
-        return
+    # if s == t:
+    #     return
+
+    tf.cond(tf.equal(s, t), lambda :0, lambda :backtrack_eisner2(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads))
+
+def backtrack_eisner2(incomplete_backtrack, complete_backtrack, s, t, direction, complete, heads):
+    tf.Print(s,[s],'s')
+    tf.Print(t,[t],'t')
     if complete:
         r = complete_backtrack[s][t][direction]
         if direction == 0:
@@ -212,12 +328,16 @@ def backtrack_eisner(incomplete_backtrack, complete_backtrack, s, t, direction, 
     else:
         r = incomplete_backtrack[s][t][direction]
         if direction == 0:
-            heads[s] = t
+            # heads[s] = t
+            temp = tf.concat([heads[:s], tf.expand_dims(t, -1), heads[s+1:]], axis=-1)
+            heads = temp
             backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 1, heads)
             backtrack_eisner(incomplete_backtrack, complete_backtrack, r+1, t, 0, 1, heads)
             return
         else:
-            heads[t] = s
+            # heads[t] = s
+            temp = tf.concat([heads[:t], tf.expand_dims(s, -1), heads[t+1:]], axis=-1)
+            heads = temp
             backtrack_eisner(incomplete_backtrack, complete_backtrack, s, r, 1, 1, heads)
             backtrack_eisner(incomplete_backtrack, complete_backtrack, r+1, t, 0, 1, heads)
             return
