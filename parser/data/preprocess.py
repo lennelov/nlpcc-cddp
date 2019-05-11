@@ -53,7 +53,7 @@ for item in word:
     fout.write((item+'\n').encode('utf-8'))
 fout.close()
 
-
+max_len = 0
 # Transform to the form framework supports
 for dataset in data_dir:
     idx = []
@@ -81,6 +81,7 @@ for dataset in data_dir:
                 fout.write((' '.join(xpos)+'\t').encode('utf-8'))
                 fout.write((' '.join(head)+'\t').encode('utf-8'))
                 fout.write((str(length)+'\n').encode('utf-8'))
+                max_len = length if length > max_len else max_len
                 idx = []
                 word = []
                 upos = []
@@ -88,3 +89,5 @@ for dataset in data_dir:
                 head = []
                 length = 0
     fout.close()
+
+print(max_len)

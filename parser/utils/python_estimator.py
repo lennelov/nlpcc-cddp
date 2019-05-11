@@ -202,6 +202,7 @@ class PythonEstimator(object):
             eval_output = ''.join(['{%s:%s}' % (k, v) for k, v in fetch_result.items() if
                                    (k not in ['train_op', 'global_step', 'summary',
                                               'predictions'] and 'best' not in k)])
+        print fetch_result['predictions']['pred']
         if self.action_mode == tf.estimator.ModeKeys.TRAIN:
             summary = tf.Summary()
             for k in self.eval_and_summary:

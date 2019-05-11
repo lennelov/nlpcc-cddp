@@ -18,14 +18,14 @@ default_dataset: &default_dataset
             type: sequence
             delim: " "
             value_type: int64
-            max_length: 200
+            max_length: 240
             pad: 0
         word: &seq_slot
             index: 1
             type: sequence
             delim: " "
             map_table: word2id
-            max_length: 200
+            max_length: 240
             pad: 0
         upos:
             index: 2
@@ -109,9 +109,9 @@ model:
     pos_size: 43
 
     use_crf: False
-    max_length: 200
+    max_length: 240
     emb_size: 50
-    batch_size: 200
+    batch_size: 2
     optimizer: Adam
     learning_rate: 0.005
     use_clip_by_norm: True
@@ -136,7 +136,7 @@ estimator:
     # infer_dataset: *predict_dataset
     # infer_op_path: results/dependency_parsing/infer.output
 
-    batch_size: 200
+    batch_size: 2
     max_epochs: 40
 
     use_crf: False
@@ -149,7 +149,8 @@ estimator:
 
     model_name: dependency_parsing_model
     # save_checkpoints_steps: 2000
-    eval_interval_epochs: 100
+    # eval_interval_epochs: 100
+    eval_interval_steps: 1
     max_training_steps: 400000
     log_every_n_steps: 1
     tolerance: 5
