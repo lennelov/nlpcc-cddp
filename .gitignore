@@ -13,3 +13,5 @@ parser/results/dependency_parsing/checkpoint/checkpoint
 parser/results/dependency_parsing/checkpoint/best/checkpoint
 cs224n-assignment/
 bist-parser/
+*.100
+*.300
